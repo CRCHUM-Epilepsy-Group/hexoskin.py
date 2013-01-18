@@ -1,5 +1,4 @@
-import cPickle, json
-import pycurl, StringIO, urllib
+import cPickle, json, os, pycurl, StringIO, urllib
 
 from hexoskin.errors import *
 
@@ -7,22 +6,23 @@ from hexoskin.errors import *
 CACHED_API_RESOURCE_LIST = '.api_resource_stash'
 
 class ApiResourceAccessor(object):
-    api = None
 
     def __init__(self, conf, api):
         self.conf = conf
         self.api = api
 
 
-    def list(self, *args, **kwargs):
+    def list(self, get_args=None, *args, **kwargs):
         self._verify_call('list', 'get')
-        response = self.api.get(self.conf['list_endpoint'], *args, **kwargs)
+        if get_args is not None:
+            get_args = self.api.convert_instances(get_args)
+        response = self.api.get(self.conf['list_endpoint'], get_args, *args, **kwargs)
         return ApiResourceList(response, self)
 
 
-    def patch(self, *args, **kwargs):
+    def patch(self, new_objects, *args, **kwargs):
         self._verify_call('list', 'patch')
-        return self.api.patch(self.conf['list_endpoint'], *args, **kwargs)
+        return self.api.patch(self.conf['list_endpoint'], {'objects':new_objects}, *args, **kwargs)
 
 
     def get(self, uri):
@@ -42,6 +42,7 @@ class ApiResourceAccessor(object):
     def _verify_call(self, access_type, method):
         if method not in self.conf['allowed_%s_http_methods' % access_type]:
             raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self.conf['name'], access_type))
+
 
 
 class ApiResourceList(object):
@@ -64,12 +65,7 @@ class ApiResourceList(object):
 
     def _append_response(self, response):
         self.nexturl = response.result['meta']['next'] if 'next' in response.result['meta'] else None
-        self.objects += self._create_instances(response.result['objects'])
-        # self.response.result['objects'] = self._create_instances response.result['objects'])
-
-
-    def _create_instances(self, obj_list):
-        return map(lambda o: ApiResourceInstance(o, self.parent), obj_list)
+        self.objects += map(lambda o: ApiResourceInstance(o, self.parent), response.result['objects'])
 
 
     def __getitem__(self, key):
@@ -88,7 +84,7 @@ class ApiResourceList(object):
 
 
     def __iter__(self):
-        return iter(self.objects)#(v for v in self.objects)
+        return iter(self.objects)
 
 
     def __reversed__(self):
@@ -106,6 +102,9 @@ class ApiResourceInstance(object):
         # Skip __setattr__ for this one.
         self.__dict__['fields'] = obj
         self.parent = parent
+        for k,v in self.fields.items():
+            if k in parent.api.resources and type(v) is dict and 'resource_uri' in v:
+                self.fields[k] = ApiResourceInstance(v, parent.api.resources[k])
 
 
     def __getattr__(self, name):
@@ -116,11 +115,7 @@ class ApiResourceInstance(object):
 
     def __setattr__(self, name, value):
         if name in self.__dict__['fields']:
-            if name in self.parent.api.resources and type(value) is ApiResourceInstance:
-                self.fields[name] = value.resource_uri
-                print 'setting %s to %s' % (name, value.resource_uri)
-            else:
-                self.fields[name] = value
+            value = self.parent.api.convert_instances({name:value})[name]
         else:
             super(ApiResourceInstance, self).__setattr__(name, value)
 
@@ -175,6 +170,12 @@ class ApiHelper(object):
             raise AttributeError
 
 
+    def clear_resource_cache(self):
+        if CACHED_API_RESOURCE_LIST is not None:
+            if os.path.isfile(CACHED_API_RESOURCE_LIST):
+                os.remove(CACHED_API_RESOURCE_LIST)
+
+
     def build_resources(self):
         if CACHED_API_RESOURCE_LIST is not None:
             try:
@@ -197,6 +198,10 @@ class ApiHelper(object):
             self.resource_conf[n] = self.get(r['schema']).result
             self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
             self.resource_conf[n]['name'] = n
+
+
+    def convert_instances(self, value_dict):
+        return dict((k,v.resource_uri) if k in self.resources and type(v) is ApiResourceInstance else (k,v) for k,v in value_dict.items())
 
 
     def _request(self, path, data=None, curlOpt=None, auth=None, method='Unknown'):
