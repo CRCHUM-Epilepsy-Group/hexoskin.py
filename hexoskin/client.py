@@ -149,19 +149,15 @@ class ApiHelper(object):
 
     def __init__(self, base_url=None, user_auth=None):
         super(ApiHelper, self).__init__()
-        self.auth_user = None
-        self.base_url = None
         self.resource_conf = {}
         self.resources = {}
         self._cache = None
 
-        if base_url is not None:
-            self.base_url = base_url
-        if user_auth is not None:
-            self.auth_user = user_auth
+        self.base_url = base_url
+        self.auth_user = user_auth
+
         if CACHED_API_RESOURCE_LIST is not None:
             self._cache = '%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', self.base_url))
-
 
 
     def __getattr__(self, name):

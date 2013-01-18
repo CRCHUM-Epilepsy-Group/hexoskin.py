@@ -1,5 +1,5 @@
 
-## Hexoskin Python API Client
+# Hexoskin Python API Client
 
 A Python client for accessing the Hexoskin API that provides simple, OOP-like access:
 
@@ -58,6 +58,7 @@ You can create items by calling create off any ApiResourceAccessor, a Range for 
 
 `new_range` is an ApiResourceInstance.
 
+
 ## Modifying Resources
 
 You can modify ApiResourceInstances in place and then call update():
@@ -71,6 +72,7 @@ Or by passing a dictionary to update().  Note that we're using ApiResourceInstan
     new_range.update({'user': users[0]})
     print new_range
 
+
 ## Deleting Resources
 
 You can delete right from the list!  Modifying our `records` ApiResourceList would send a delete request to the API except it's not allowed.
@@ -83,6 +85,48 @@ You can delete right from the list!  Modifying our `records` ApiResourceList wou
 Or you can call delete() on a ApiResourceInstance.  That Range we created is probably not worth keeping, let's kill it:
 
     new_range.delete()
+
+
+## Exceptions
+
+There are several Exceptions defined by this library.  All but one have to do with HTTP error responses.  Here's the list:
+
+### MethodNotAllowed
+
+This is raised when the library notices you are trying to use a disallowed method.  No request is sent in this case.
+
+    from hexoskin.errors import *
+    try:
+        api.datatype.list()[4].delete()
+    except MethodNotAllowed, e:
+        # handle the error somehow...
+
+### HttpError xxx
+
+All HTTP errors inherit from this class so you may use this to catch **all** (even ones without their own class) HTTP errors.  HttpErrors all have a ApiResponse object in `response` which you can examine for more information about the error.
+
+    try:
+        # Say you can view, but not change user 5437's annotations
+        r = api.annotation.list({'user':5437})[0]
+        r.update({'annotation':'I wuz here'})
+    catch HttpError, e:
+        print e.response
+
+
+### HttpClientError 4xx
+All 400-level HTTP errors inherit from this class so you may use this to catch all 400-level HTTP errors defined below.
+
+ - **HttpBadRequest 400**
+ - **HttpUnauthorized 401**
+ - **HttpForbidden 403**
+ - **HttpNotFound 404**
+ - **HttpMethodNotAllowed 405**
+
+### HttpServerError 5xx
+All 500-level HTTP errors inherit from this class so you may use this to catch all 500 level HTTP errors defined below.
+
+ - **HttpInternalServerError 500**
+ - **HttpNotImplemented 501**
 
 
 ## Cached Resource List
