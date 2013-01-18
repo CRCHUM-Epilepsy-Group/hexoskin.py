@@ -1,6 +1,10 @@
 
+## Hexoskin Python API Client
 
 A Python client for accessing the Hexoskin API.
+
+
+# General usage
 
 It provides simple, OOP-like access:
 
@@ -54,9 +58,16 @@ Or by passing a dictionary to update(), note how I can use an ApiResourceInstanc
     new_range.update({'user': users[0]})
     print new_range
 
-# And of course, delete it:
+And of course, delete it:
 
     new_range.delete()
 
 
-The library derives it's members by querying the API and stores the result locally.
+# Caching
+
+The library derives its members by querying the API and stores the result locally.  To you can decide where this file is stored by setting the corresponding variable:
+
+    import hexoskin.client
+    hexoskin.client.CACHED_API_RESOURCE_LIST = '.new_file'
+
+Setting it to None will disable the caching... but that's not recommend.
