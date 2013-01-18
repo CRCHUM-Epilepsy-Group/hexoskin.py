@@ -1,5 +1,5 @@
 import cPickle, json
-import pycurl, StringIO, urllib2
+import pycurl, StringIO, urllib
 
 from hexoskin.errors import *
 
@@ -240,7 +240,7 @@ class ApiHelper(object):
 
     def get(self, path, data=None, auth=None):
         if data:
-            path  = '%s?%s' % (path, urllib2.urlencode(data))
+            path  = '%s?%s' % (path, urllib.urlencode(data))
         return self._request(path, auth=auth)
 
 
