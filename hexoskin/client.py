@@ -1,14 +1,14 @@
-import cPickle, json, os, pycurl, StringIO, urllib
+import cPickle, json, os, pycurl, re, StringIO, urllib
 
 from hexoskin.errors import *
 
 
-CACHED_API_RESOURCE_LIST = '.api_resource_stash'
+CACHED_API_RESOURCE_LIST = '.api_stash'
 
 class ApiResourceAccessor(object):
 
     def __init__(self, conf, api):
-        self.conf = conf
+        self._conf = conf
         self.api = api
 
 
@@ -16,39 +16,40 @@ class ApiResourceAccessor(object):
         self._verify_call('list', 'get')
         if get_args is not None:
             get_args = self.api.convert_instances(get_args)
-        response = self.api.get(self.conf['list_endpoint'], get_args, *args, **kwargs)
+        response = self.api.get(self._conf['list_endpoint'], get_args, *args, **kwargs)
         return ApiResourceList(response, self)
 
 
     def patch(self, new_objects, *args, **kwargs):
         self._verify_call('list', 'patch')
-        return self.api.patch(self.conf['list_endpoint'], {'objects':new_objects}, *args, **kwargs)
+        return self.api.patch(self._conf['list_endpoint'], {'objects':new_objects}, *args, **kwargs)
 
 
     def get(self, uri):
         self._verify_call('detail', 'get')
-        if type(uri) is int or self.conf['list_endpoint'] not in uri:
-            uri = '%s%s/' % (self.conf['list_endpoint'], uri)
+        if type(uri) is int or self._conf['list_endpoint'] not in uri:
+            uri = '%s%s/' % (self._conf['list_endpoint'], uri)
         response = self.api.get(uri)
         return ApiResourceInstance(response.result, self)
 
 
     def create(self, data, *args, **kwargs):
         self._verify_call('list', 'post')
-        response = self.api.post(self.conf['list_endpoint'], data, *args, **kwargs)
+        data = self.api.convert_instances(data)
+        response = self.api.post(self._conf['list_endpoint'], data, *args, **kwargs)
         return ApiResourceInstance(response.result, self)
 
 
     def _verify_call(self, access_type, method):
-        if method not in self.conf['allowed_%s_http_methods' % access_type]:
-            raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self.conf['name'], access_type))
+        if method not in self._conf['allowed_%s_http_methods' % access_type]:
+            raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self._conf['name'], access_type))
 
 
 
 class ApiResourceList(object):
 
     def __init__(self, response, parent):
-        self.parent = parent
+        self._parent = parent
         self.response = response
         self.nexturl = None
         self.objects = []
@@ -57,7 +58,7 @@ class ApiResourceList(object):
 
     def next(self):
         if self.nexturl:
-            response = self.parent.api.get(self.nexturl)
+            response = self._parent.api.get(self.nexturl)
             self._append_response(response)
         else:
             raise IndexError('List is already at the end.')
@@ -65,7 +66,7 @@ class ApiResourceList(object):
 
     def _append_response(self, response):
         self.nexturl = response.result['meta']['next'] if 'next' in response.result['meta'] else None
-        self.objects += map(lambda o: ApiResourceInstance(o, self.parent), response.result['objects'])
+        self.objects += map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects'])
 
 
     def __getitem__(self, key):
@@ -99,9 +100,9 @@ class ApiResourceList(object):
 class ApiResourceInstance(object):
 
     def __init__(self, obj, parent):
-        # Skip __setattr__ for this one.
+        # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.__dict__['fields'] = obj
-        self.parent = parent
+        self._parent = parent
         for k,v in self.fields.items():
             if k in parent.api.resources and type(v) is dict and 'resource_uri' in v:
                 self.fields[k] = ApiResourceInstance(v, parent.api.resources[k])
@@ -115,7 +116,7 @@ class ApiResourceInstance(object):
 
     def __setattr__(self, name, value):
         if name in self.__dict__['fields']:
-            value = self.parent.api.convert_instances({name:value})[name]
+            value = self._parent.api.convert_instances({name:value})[name]
         else:
             super(ApiResourceInstance, self).__setattr__(name, value)
 
@@ -125,11 +126,11 @@ class ApiResourceInstance(object):
 
 
     def update(self, data=None, *args, **kwargs):
-        self.parent._verify_call('detail', 'put')
+        self._parent._verify_call('detail', 'put')
         if data is not None:
             for k,v in data.items():
                 setattr(self, k, v)
-        response = self.parent.api.put(self.fields['resource_uri'], self.fields, *args, **kwargs)
+        response = self._parent.api.put(self.fields['resource_uri'], self.fields, *args, **kwargs)
 
         if response.result:
             self.fields = response.result.copy()
@@ -138,24 +139,29 @@ class ApiResourceInstance(object):
 
 
     def delete(self, *args, **kwargs):
-        self.parent._verify_call('detail', 'delete')
-        response = self.parent.api.delete(self.fields['resource_uri'], *args, **kwargs)
+        self._parent._verify_call('detail', 'delete')
+        response = self._parent.api.delete(self.fields['resource_uri'], *args, **kwargs)
         self.fields = dict((k, None) for k in self.fields.keys())
 
 
 
 class ApiHelper(object):
-    auth_user = None
-    base_url = None
-    resource_conf = {}
-    resources = {}
 
     def __init__(self, base_url=None, user_auth=None):
         super(ApiHelper, self).__init__()
+        self.auth_user = None
+        self.base_url = None
+        self.resource_conf = {}
+        self.resources = {}
+        self._cache = None
+
         if base_url is not None:
             self.base_url = base_url
         if user_auth is not None:
             self.auth_user = user_auth
+        if CACHED_API_RESOURCE_LIST is not None:
+            self._cache = '%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', self.base_url))
+
 
 
     def __getattr__(self, name):
@@ -171,20 +177,22 @@ class ApiHelper(object):
 
 
     def clear_resource_cache(self):
-        if CACHED_API_RESOURCE_LIST is not None:
-            if os.path.isfile(CACHED_API_RESOURCE_LIST):
-                os.remove(CACHED_API_RESOURCE_LIST)
+        if self._cache is not None:
+            if os.path.isfile(self._cache):
+                os.remove(self._cache)
+                self.resources = {}
+                self.resource_conf = {}
 
 
     def build_resources(self):
-        if CACHED_API_RESOURCE_LIST is not None:
+        if self._cache is not None:
             try:
-                with open(CACHED_API_RESOURCE_LIST) as f:
+                with open(self._cache, 'r') as f:
                     self.resource_conf = cPickle.load(f)
             except IOError:
                 self._fetch_resource_list()
                 try:
-                    with open(CACHED_API_RESOURCE_LIST, 'w') as f:
+                    with open(self._cache, 'w+') as f:
                         cPickle.dump(self.resource_conf, f)
                 except IOError, e:
                     print "Couldn't write to stash file: %s" % e
@@ -294,12 +302,11 @@ class ApiHelper(object):
 
 
 class HexoApi(ApiHelper):
-    base_url = 'https://api.hexoskin.com'
 
     def __init__(self, base_url=None, user_auth=None):
-        if base_url is not None:
-            self.base_url = base_url
-        return super(HexoApi, self).__init__(self.base_url, user_auth)
+        if base_url is None:
+            base_url = 'https://api.hexoskin.com'
+        return super(HexoApi, self).__init__(base_url, user_auth)
 
 
 
