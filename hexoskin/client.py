@@ -1,5 +1,6 @@
-import cPickle, json, os, pycurl, re, StringIO, urllib
-
+import cPickle, hashlib, json, os, re, time
+import requests
+from requests.auth import HTTPBasicAuth
 from hexoskin.errors import *
 
 
@@ -147,7 +148,7 @@ class ApiResourceInstance(object):
 
 class ApiHelper(object):
 
-    def __init__(self, base_url=None, user_auth=None):
+    def __init__(self, base_url=None, user_auth=None, api_key=None, api_secret=None):
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
@@ -155,6 +156,8 @@ class ApiHelper(object):
 
         self.base_url = base_url
         self.auth_user = user_auth
+        self.api_key = api_key
+        self.api_secret = api_secret
 
         if CACHED_API_RESOURCE_LIST is not None:
             self._cache = '%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', self.base_url))
@@ -208,74 +211,37 @@ class ApiHelper(object):
         return dict((k,v.resource_uri) if k in self.resources and type(v) is ApiResourceInstance else (k,v) for k,v in value_dict.items())
 
 
-    def _request(self, path, data=None, curlOpt=None, auth=None, method='Unknown'):
-        s = StringIO.StringIO()
-
-        req = pycurl.Curl()
-        req.setopt(pycurl.SSL_VERIFYPEER, False)
-        req.setopt(pycurl.WRITEFUNCTION, s.write)
-        req.setopt(pycurl.HTTPHEADER, ['Accept: application/json', 'Content-type: application/json'])
-        req.setopt(pycurl.FOLLOWLOCATION, 1)
-        req.setopt(pycurl.MAXREDIRS, 5)
-        req.setopt(pycurl.URL, str(self.base_url + path))
-
-        if auth is not None:
-            req.setopt(pycurl.USERPWD, auth)
-        elif self.auth_user is not None:
-            req.setopt(pycurl.USERPWD, self.auth_user)
-        
-        if data is not None:
-            req.setopt(pycurl.POSTFIELDS, json.dumps(data))
-
-        if curlOpt is not None:
-            for opt, val in curlOpt:
-                #print "  setting curl option %s to %s" % (opt, val)
-                req.setopt(opt, val)
-
-        # print 'Sending request: %s/%s/' % (self.base_url, path)
-        req.perform()
-
-        response = ApiResponse(req.getinfo(pycurl.HTTP_CODE), req.getinfo(pycurl.EFFECTIVE_URL), self._method_from_curl_options(curlOpt), s.getvalue())
+    def _request(self, path, method, data=None, params=None, auth=None):
+        if auth is None:
+            auth = self.auth_user
+        if data:
+            data = json.dumps(data)
+        url = self.base_url + path
+        headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=headers, auth=HexoAuth(self.api_key, self.api_secret, auth)), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
-
         return response
 
 
     def post(self, path, data=None, auth=None):
-        opts = [(pycurl.POST, 1)]
-        return self._request(path, data, opts, auth)
+        return self._request(path, 'post', data)
 
 
     def get(self, path, data=None, auth=None):
-        if data:
-            path  = '%s?%s' % (path, urllib.urlencode(data))
-        return self._request(path, auth=auth)
+        return self._request(path, 'get', params=data)
 
 
     def put(self, path, data=None, auth=None):
-        opts = [(pycurl.CUSTOMREQUEST, 'PUT')]
-        return self._request(path, data, opts, auth)
+        return self._request(path, 'put', data)
 
 
     def patch(self, path, data=None, auth=None):
-        opts = [(pycurl.CUSTOMREQUEST, 'PATCH')]
-        return self._request(path, data, opts, auth)
+        return self._request(path, 'patch', data)
 
 
     def delete(self, path, auth=None):
-        opts = [(pycurl.CUSTOMREQUEST, 'DELETE')]
-        return self._request(path, None, opts, auth)
-
-
-    def _method_from_curl_options(self, options):
-        if options is not None:
-            o = dict(options)
-            if pycurl.POST in o:
-                return 'POST'
-            if pycurl.CUSTOMREQUEST in o:
-                return o[pycurl.CUSTOMREQUEST]
-        return 'GET'
+        return self._request(path, 'delete')
 
 
     def _throw_http_exception(self, response):
@@ -297,26 +263,54 @@ class ApiHelper(object):
 
 
 
+class HexoAuth(HTTPBasicAuth):
+
+    def __init__(self, api_key, api_secret, auth_user=None):
+        self.username = None
+        self.password = None
+        self.api_key = api_key
+        self.api_secret = api_secret
+        if auth_user is not None:
+            self.username, self.password = auth_user.split(':')
+
+    def __call__(self, r):
+        if self.username and self.password:
+            r = super(HexoAuth, self).__call__(r)
+        ts = int(time.time())
+        digest = hashlib.sha1('%s%s%s' % (self.api_secret, ts, r.url)).hexdigest()
+        r.headers['X-HEXOTIMESTAMP'] = ts
+        r.headers['X-HEXOAPIKEY'] = self.api_key
+        r.headers['X-HEXOAPISIGNATURE'] = digest
+        # print '(%s, %s, %s) = %s' % (self.api_secret, ts, r.url, digest)
+        return r
+
+
+
 class HexoApi(ApiHelper):
 
-    def __init__(self, base_url=None, user_auth=None):
+    def __init__(self, api_key, api_secret, base_url=None, user_auth=None):
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(base_url, user_auth)
+        return super(HexoApi, self).__init__(base_url, user_auth, api_key, api_secret)
 
 
 
 class ApiResponse(object):
+    """
+    This was built before using the excellent `requests` library so now it
+    seems a little silly to wrap the requests.response object with a less 
+    function one.  It's here for compatibility now.
+    """
 
-    def __init__(self, status_code, url, method, body):
+    def __init__(self, response, method='GET'):
         try:
-            self.result = json.loads(body)
+            self.result = response.json()
         except:
-            self.result = body
-        self.body = body
-        self.status_code = status_code
-        self.url = url
-        self.method = method
+            self.result = response.content
+        self.body = response.content
+        self.status_code = response.status_code
+        self.url = response.request.url
+        self.method = method.upper()
 
     def success(self):
         200 <= self.status_code < 400
