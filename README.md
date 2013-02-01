@@ -1,9 +1,15 @@
 
 # Hexoskin Python API Client
 
-A Python client for accessing the Hexoskin API that provides simple, OOP-like access:
+A Python client for accessing the Hexoskin API that provides simple, OOP-like access.
 
-        api = hexoskin.client.HexoApi(user_auth='someuser@hexoskin.com:someuserpassword')
+This client requires the `requests` python library.
+
+    sudo pip install requests
+
+Initialize a client instance like this:
+
+    api = hexoskin.client.HexoApi('myAPIkey', 'myAPIsecret', user_auth='someuser@hexoskin.com:someuserpassword')
 
 
 # Getting data
