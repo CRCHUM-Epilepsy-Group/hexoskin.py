@@ -1,4 +1,4 @@
-import cPickle, hashlib, json, os, re, time
+import cPickle, hashlib, json, os, re, time, urlparse
 import requests
 from requests.auth import HTTPBasicAuth
 from hexoskin.errors import *
@@ -154,7 +154,7 @@ class ApiHelper(object):
         self.resources = {}
         self._cache = None
 
-        self.base_url = base_url
+        self.base_url = self._parse_base_url(base_url)
         self.auth_user = user_auth
         self.api_key = api_key
         self.api_secret = api_secret
@@ -205,6 +205,13 @@ class ApiHelper(object):
             self.resource_conf[n] = self.get(r['schema']).result
             self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
             self.resource_conf[n]['name'] = n
+
+
+    def _parse_base_url(self, base_url):
+        parsed = urlparse.urlparse(base_url)
+        if parsed.netloc:
+            return 'https://' + parsed.netloc
+        raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
 
     def convert_instances(self, value_dict):
