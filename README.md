@@ -146,7 +146,7 @@ To create the filename, the base_url has all groups of non-word chars replaced w
 
     cache_filename = '%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', self.base_url))
 
-Setting it to None will disable the caching but that's not recommended, you'll incur a pause each time a HexoApi class is initialized.  To clear the cache, either find and delete the cache file on your system, or call clear_resource_cache() on a HexoApi instance.  The next call that requires the resource list will refetch it from the API.
+Setting it to None will disable the caching but that's not recommended, you'll incur a pause each time a HexoApi class is initialized.  To clear the cache, either find and delete the cache file on your system, or call `clear_resource_cache()` on a HexoApi instance.  The next call that requires the resource list will refetch it from the API.
 
     api.clear_resource_cache()
     api.account.list() # Will refetch the resource list.

@@ -65,9 +65,25 @@ class ApiResourceList(object):
             raise IndexError('List is already at the end.')
 
 
-    def _append_response(self, response):
-        self.nexturl = response.result['meta']['next'] if 'next' in response.result['meta'] else None
-        self.objects += map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects'])
+    def prev(self):
+        if self.prevurl:
+            response = self._parent.api.get(self.prevurl)
+            self._append_response(response, prepend=True)
+        else:
+            raise IndexError('List is already at the beginning.')
+
+
+    def _append_response(self, response, prepend=False):
+        self.nexturl = None
+        self.prevurl = None
+        if 'meta' in response.result:
+            self.nexturl = response.result['meta'].get('next', None)
+            self.prevurl = response.result['meta'].get('prev', None)
+        if 'objects' in response.result:
+            if prepend is True:
+                self.objects.insert(0, map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects']))
+            else:
+                self.objects.append(map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects']))
 
 
     def __getitem__(self, key):
@@ -148,7 +164,7 @@ class ApiResourceInstance(object):
 
 class ApiHelper(object):
 
-    def __init__(self, base_url=None, user_auth=None, api_key=None, api_secret=None):
+    def __init__(self, base_url=None, user_auth=None, api_key=None, api_secret=None, api_version=''):
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
@@ -158,9 +174,10 @@ class ApiHelper(object):
         self.auth_user = user_auth
         self.api_key = api_key
         self.api_secret = api_secret
+        self.api_version = api_version
 
         if CACHED_API_RESOURCE_LIST is not None:
-            self._cache = '%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', self.base_url))
+            self._cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s:%s' % (self.base_url, self.api_version)))).rstrip('.')
 
 
     def __getattr__(self, name):
@@ -225,7 +242,9 @@ class ApiHelper(object):
             data = json.dumps(data)
         url = self.base_url + path
         headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=headers, auth=HexoAuth(self.api_key, self.api_secret, auth)), method)
+        if self.api_version:
+            headers['X-HexoAPIVersion'] = self.api_version
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=headers, auth=HexoAuth(self.api_key, self.api_secret, auth), verify=False), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
@@ -295,10 +314,10 @@ class HexoAuth(HTTPBasicAuth):
 
 class HexoApi(ApiHelper):
 
-    def __init__(self, api_key, api_secret, base_url=None, user_auth=None):
+    def __init__(self, api_key, api_secret, base_url=None, user_auth=None, api_version=''):
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(base_url, user_auth, api_key, api_secret)
+        return super(HexoApi, self).__init__(base_url, user_auth, api_key, api_secret, api_version)
 
 
 
