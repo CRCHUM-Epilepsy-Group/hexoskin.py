@@ -116,6 +116,8 @@ class ApiResourceList(object):
 
 class ApiResourceInstance(object):
 
+    _parent = None
+
     def __init__(self, obj, parent):
         # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.__dict__['fields'] = obj
@@ -133,9 +135,11 @@ class ApiResourceInstance(object):
 
     def __setattr__(self, name, value):
         if name in self.__dict__['fields']:
-            value = self._parent.api.convert_instances({name:value})[name]
-        else:
+            self.__dict__['fields'].update(self._parent.api.convert_instances({name:value}))
+        elif hasattr(self, name):
             super(ApiResourceInstance, self).__setattr__(name, value)
+        else:
+            raise AttributeError
 
 
     def __str__(self):
@@ -151,8 +155,6 @@ class ApiResourceInstance(object):
 
         if response.result:
             self.fields = response.result.copy()
-        else:
-            self.fields = dict(self.fields.items() + data.items())
 
 
     def delete(self, *args, **kwargs):

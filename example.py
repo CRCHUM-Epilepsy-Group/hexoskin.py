@@ -9,7 +9,7 @@ import hexoskin.errors
 try:
 
     # Initialize the API object.
-    api = hexoskin.client.HexoApi('[apikey]', '[apisecret]', base_url='https://dapi.hexoskin.com', user_auth='user@example.com:password', api_version='1.0.0')
+    api = hexoskin.client.HexoApi('[apikey]', '[apisecret]', base_url='https://api.hexoskin.com', user_auth='user@example.com:password', api_version='1.0.0')
 
     # Get the current user's info
     user = api.account.list()[0]
