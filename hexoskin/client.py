@@ -38,7 +38,10 @@ class ApiResourceAccessor(object):
         self._verify_call('list', 'post')
         data = self.api.convert_instances(data)
         response = self.api.post(self._conf['list_endpoint'], data, *args, **kwargs)
-        return ApiResourceInstance(response.result, self)
+        if response.result:
+            return ApiResourceInstance(response.result, self)
+        else:
+            return response.headers['Location']
 
 
     def _verify_call(self, access_type, method):
@@ -136,10 +139,10 @@ class ApiResourceInstance(object):
     def __setattr__(self, name, value):
         if name in self.__dict__['fields']:
             self.__dict__['fields'].update(self._parent.api.convert_instances({name:value}))
-        elif hasattr(self, name):
-            super(ApiResourceInstance, self).__setattr__(name, value)
+        # elif hasattr(self, name):
         else:
-            raise AttributeError
+            super(ApiResourceInstance, self).__setattr__(name, value)
+        #     raise AttributeError
 
 
     def __str__(self):
@@ -272,6 +275,16 @@ class ApiHelper(object):
         return self._request(path, 'delete')
 
 
+    def resource_from_uri(self, path):
+        if path.startswith(self.base_url):
+            path = path[len(self.base_url):]
+        uri,id = re.match('^(.+?)(\d+)/$', path).groups()
+        for k,r in self.resource_conf.items():
+            if r['list_endpoint'] == uri:
+                return getattr(self, k).get(id)
+        return None
+
+
     def _throw_http_exception(self, response):
         if response.status_code == 400:
             raise HttpBadRequest(response)
@@ -339,9 +352,13 @@ class ApiResponse(object):
         self.status_code = response.status_code
         self.url = response.request.url
         self.method = method.upper()
+        self.response = response
 
     def success(self):
         200 <= self.status_code < 400
+
+    def __getattr__(self, attr):
+        return getattr(self.response, attr)
 
     def __str__(self):
         return '%s %s %s\n%s' % (self.status_code, self.method.ljust(6), self.url, self.result)

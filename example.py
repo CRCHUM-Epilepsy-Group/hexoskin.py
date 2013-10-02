@@ -38,7 +38,7 @@ try:
     # #     "Oh no you di'nt! %s" % e
 
     # # You can create items, a Range for instance:
-    # new_range = api.range.create({'name':'testnew_range', 'start':10000, 'end':10999, 'user':user.resource_uri})
+    # new_range = api.range.create({'name':'testnew_range', 'start':353163129199, 'end':353163139199, 'user':user.resource_uri})
 
     # # # `new_range` is an ApiResourceInstance.  You can modify it in place:
     # new_range.name = 'newtestyrangey'

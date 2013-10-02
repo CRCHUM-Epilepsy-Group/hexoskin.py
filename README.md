@@ -62,7 +62,7 @@ You can create items by calling create off any ApiResourceAccessor, a Range for 
 
     new_range = api.range.create({'name':'testnew_range', 'start':10000, 'end':10999, 'user':user})
 
-`new_range` is an ApiResourceInstance.
+`new_range` is an ApiResourceInstance or, if a resource is not automatically returned from by the API, a string of the URI of the created resource.  You may pass the URI to api.resource_from_uri() to load the resource if desired.
 
 
 ## Modifying Resources
