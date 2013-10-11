@@ -1,4 +1,4 @@
-import cPickle, hashlib, json, os, re, time, urlparse
+import base64, cPickle, hashlib, json, os, re, struct, time, urlparse
 import requests
 from requests.auth import HTTPBasicAuth
 from hexoskin.errors import *
@@ -13,11 +13,11 @@ class ApiResourceAccessor(object):
         self.api = api
 
 
-    def list(self, get_args=None, *args, **kwargs):
+    def list(self, get_args={}, **kwargs):
         self._verify_call('list', 'get')
-        if get_args is not None:
-            get_args = self.api.convert_instances(get_args)
-        response = self.api.get(self._conf['list_endpoint'], get_args, *args, **kwargs)
+        get_args.update(kwargs)
+        get_args = self.api.convert_instances(get_args)
+        response = self.api.get(self._conf['list_endpoint'], get_args)
         return ApiResourceList(response, self)
 
 
@@ -79,14 +79,16 @@ class ApiResourceList(object):
     def _append_response(self, response, prepend=False):
         self.nexturl = None
         self.prevurl = None
-        if 'meta' in response.result:
+        try:
             self.nexturl = response.result['meta'].get('next', None)
             self.prevurl = response.result['meta'].get('prev', None)
-        if 'objects' in response.result:
+            converted = [ApiResourceInstance(o, self._parent) for o in response.result['objects']]
             if prepend is True:
-                self.objects.insert(0, map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects']))
+                self.objects = converted + self.objects
             else:
-                self.objects.append(map(lambda o: ApiResourceInstance(o, self._parent), response.result['objects']))
+                self.objects += converted
+        except KeyError, e:
+            raise ApiError('Cannot parse results, unexpected content received! %s \nFirst 64 chars of content: %s' % (e, response.body[:64]))
 
 
     def __getitem__(self, key):
@@ -132,8 +134,11 @@ class ApiResourceInstance(object):
 
     def __getattr__(self, name):
         if name in self.fields:
+            # Special case to decode data fields.
+            if name == 'data':
+                return struct.unpack('i' * self.nsample, base64.b64decode(self.fields[name]))
             return self.fields[name]
-        raise AttributeError
+        raise AttributeError("Attribute '%s' not found on %s" % (name, self._parent._conf['name']))
 
 
     def __setattr__(self, name, value):
@@ -194,7 +199,7 @@ class ApiHelper(object):
             self.resources[name] = ApiResourceAccessor(self.resource_conf[name], self)
             return self.resources[name]
         else:
-            raise AttributeError
+            raise AttributeError("'%s' is not a valid API endpoint" % name)
 
 
     def clear_resource_cache(self):
@@ -256,23 +261,23 @@ class ApiHelper(object):
 
 
     def post(self, path, data=None, auth=None):
-        return self._request(path, 'post', data)
+        return self._request(path, 'post', data, auth=auth)
 
 
     def get(self, path, data=None, auth=None):
-        return self._request(path, 'get', params=data)
+        return self._request(path, 'get', params=data, auth=auth)
 
 
     def put(self, path, data=None, auth=None):
-        return self._request(path, 'put', data)
+        return self._request(path, 'put', data, auth=auth)
 
 
     def patch(self, path, data=None, auth=None):
-        return self._request(path, 'patch', data)
+        return self._request(path, 'patch', data, auth=auth)
 
 
     def delete(self, path, auth=None):
-        return self._request(path, 'delete')
+        return self._request(path, 'delete', auth=auth)
 
 
     def resource_from_uri(self, path):

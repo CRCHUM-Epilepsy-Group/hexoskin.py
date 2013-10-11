@@ -26,7 +26,11 @@ All the users you can see:
     users = api.user.list()
     print users[0]
 
-Passing a dictionary to list() sets the GET args of the request.  So any filtering you'd like to apply (that's supported by the API too, of course) can be managed that way.  For instance, of records before a given startTimestamp.
+Passing either keyword arguments or a dictionary to list() sets the GET args of the request.  So any filtering you'd like to apply (that's supported by the API too, of course) can be managed that way.  For instance, of records before a given startTimestamp.
+
+    records = api.record.list(startTimestamp__lt=347477726132)
+
+Or:
 
     records = api.record.list({'startTimestamp__lt':347477726132})
 
@@ -60,7 +64,7 @@ You may also user get() to fetch a particular resource by either URI or id.
 
 You can create items by calling create off any ApiResourceAccessor, a Range for instance:
 
-    new_range = api.range.create({'name':'testnew_range', 'start':10000, 'end':10999, 'user':user})
+    new_range = api.range.create({'name':'testnew_range', 'start':353163129199, 'end':353163139199, 'user':user})
 
 `new_range` is an ApiResourceInstance or, if a resource is not automatically returned from by the API, a string of the URI of the created resource.  You may pass the URI to api.resource_from_uri() to load the resource if desired.
 
