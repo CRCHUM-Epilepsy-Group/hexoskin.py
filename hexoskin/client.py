@@ -13,12 +13,18 @@ class ApiResourceAccessor(object):
         self.api = api
 
 
-    def list(self, get_args={}, **kwargs):
+    def list(self, get_args=None, **kwargs):
         self._verify_call('list', 'get')
+        get_args = get_args or {}
         get_args.update(kwargs)
         get_args = self.api.convert_instances(get_args)
         response = self.api.get(self._conf['list_endpoint'], get_args)
-        return ApiResourceList(response, self)
+
+        # TODO: Replace with a reasonable method of determining the response type.
+        if type(response.result) is list:
+            return ApiDataList(response, self)
+        else:
+            return ApiResourceList(response, self)
 
 
     def patch(self, new_objects, *args, **kwargs):
@@ -47,6 +53,41 @@ class ApiResourceAccessor(object):
     def _verify_call(self, access_type, method):
         if method not in self._conf['allowed_%s_http_methods' % access_type]:
             raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self._conf['name'], access_type))
+
+
+
+class ApiDataList(object):
+
+    def __init__(self, response, parent):
+        self._parent = parent
+        self.response = response
+        for i,v in enumerate(self.response.result):
+            self.response.result[i] = ApiDataResult(v, parent)
+
+
+    def __getitem__(self, key):
+        return self.response.result[key]
+
+
+    def __iter__(self):
+        return iter(self.response.result)
+
+
+    def __reversed__(self):
+        return reversed(self.response.result)
+
+
+    def __len__(self):
+        return len(self.response.result)
+
+
+
+class ApiDataResult(object):
+
+    def __init__(self, row, parent):
+        self.record = [ApiResourceInstance(r, parent.api.record) for r in row['record']]
+        self.data = dict((int(d), v) for d,v in row['data'].items())
+        self.user = row['user']
 
 
 
@@ -121,22 +162,20 @@ class ApiResourceList(object):
 
 class ApiResourceInstance(object):
 
-    _parent = None
-
     def __init__(self, obj, parent):
         # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.__dict__['fields'] = obj
         self._parent = parent
         for k,v in self.fields.items():
-            if k in parent.api.resources and type(v) is dict and 'resource_uri' in v:
-                self.fields[k] = ApiResourceInstance(v, parent.api.resources[k])
+            if k in parent.api.resource_conf and type(v) is dict and 'resource_uri' in v:
+                self.fields[k] = ApiResourceInstance(v, getattr(parent.api, k))
 
 
     def __getattr__(self, name):
         if name in self.fields:
             # Special case to decode data fields.
             if name == 'data':
-                return struct.unpack('i' * self.nsample, base64.b64decode(self.fields[name]))
+                return self._decode_data()
             return self.fields[name]
         raise AttributeError("Attribute '%s' not found on %s" % (name, self._parent._conf['name']))
 
@@ -170,6 +209,25 @@ class ApiResourceInstance(object):
         response = self._parent.api.delete(self.fields['resource_uri'], *args, **kwargs)
         self.fields = dict((k, None) for k in self.fields.keys())
 
+
+    def _decode_data(self):
+        if not hasattr(self, '_decoded_data'):
+            self._decoded_data = None
+            for fn in (self._decode_binary, self._decode_array):
+                try:
+                    self._decoded_data = fn(self.fields['data'])
+                    break
+                except Exception:
+                    pass
+        return self._decoded_data
+
+
+    def _decode_binary(self, data):
+        return struct.unpack('i' * self.nsample, base64.b64decode(data))
+
+
+    def _decode_array(self, data):
+        return [tuple(int(i) for i in v.split(',')) for v in data.strip('()[]').split('), (')]
 
 
 class ApiHelper(object):
@@ -345,7 +403,7 @@ class ApiResponse(object):
     """
     This was built before using the excellent `requests` library so now it
     seems a little silly to wrap the requests.response object with a less 
-    function one.  It's here for compatibility now.
+    functional one.  It's here for compatibility now.  TODO: remove.
     """
 
     def __init__(self, response, method='GET'):

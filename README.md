@@ -60,6 +60,21 @@ You may also user get() to fetch a particular resource by either URI or id.
     ecg0_user = api.user.get(ecgs[0].user)
 
 
+## The DataFile Resource
+
+The DataFile Resource works differently because it doesn't return a list of rows that you can page through, but instead a single response containing all the data that you requested.  Consequently a request to `datafile` returns an ApiDataList rather than an ApiResourceList.  You can iterate through an ApiDataList to see the ApiDataResult returned for each user (frequently this will be just the current user).  You can query it's length to see how many ApiDataResults were returned
+
+    result = api.datafile.list(record=99999, datatype=19)
+    len(result)         # -> 1
+
+An ApiDataResult has a `user` attribute that contains the resource_uri of the user, a `record` attribute that contains the records involved in the data, and a `data` attribute that contains the returned data points.
+
+    dataresult = result[0]
+    dataresult.user     # -> '/api/v1/user/99/'
+    dataresult.record   # -> an ApiResourceInstance of a Record
+    dataresult.data     # -> an array of the activity data for this Record
+
+
 ## Creating Resources
 
 You can create items by calling create off any ApiResourceAccessor, a Range for instance:
