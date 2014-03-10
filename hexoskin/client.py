@@ -85,7 +85,7 @@ class ApiDataList(object):
 class ApiDataResult(object):
 
     def __init__(self, row, parent):
-        self.record = [ApiResourceInstance(r, parent.api.record) for r in row['record']]
+        self.record = [ApiResourceInstance(r, parent.api.record) for r in row.get('record', [])]
         self.data = dict((int(d), v) for d,v in row['data'].items())
         self.user = row['user']
 
