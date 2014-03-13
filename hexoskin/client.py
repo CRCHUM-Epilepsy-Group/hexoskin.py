@@ -8,7 +8,8 @@ CACHED_API_RESOURCE_LIST = '.api_stash'
 
 class ApiResourceAccessor(object):
 
-    def __init__(self, conf, api):
+    def __init__(self, name, conf, api):
+        self._name = name
         self._conf = conf
         self.api = api
 
@@ -189,8 +190,8 @@ class ApiResourceInstance(object):
         #     raise AttributeError
 
 
-    def __str__(self):
-        return str(self.fields)
+    def __repr__(self):
+        return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', getattr(self, 'deviceid', None)))
 
 
     def update(self, data=None, *args, **kwargs):
@@ -254,7 +255,7 @@ class ApiHelper(object):
         if name in self.resources:
             return self.resources[name]
         if name in self.resource_conf:
-            self.resources[name] = ApiResourceAccessor(self.resource_conf[name], self)
+            self.resources[name] = ApiResourceAccessor(name, self.resource_conf[name], self)
             return self.resources[name]
         else:
             raise AttributeError("'%s' is not a valid API endpoint" % name)
