@@ -37,8 +37,11 @@ class ApiResourceAccessor(object):
         self._verify_call('detail', 'get')
         if type(uri) is int or self._conf['list_endpoint'] not in uri:
             uri = '%s%s/' % (self._conf['list_endpoint'], uri)
-        response = self.api.get(uri)
-        return ApiResourceInstance(response.result, self)
+        api_instance = self.api._object_cache.get(uri)
+        if not api_instance:
+            response = self.api.get(uri)
+            api_instance = self.api._object_cache.set(uri, ApiResourceInstance(response.result, self))
+        return api_instance
 
 
     def create(self, data, *args, **kwargs):
@@ -165,7 +168,7 @@ class ApiResourceInstance(object):
 
     def __init__(self, obj, parent, lazy=False):
         # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
-        self.__dict__['fields'] = obj
+        self.update_fields(obj)
         self._lazy = lazy
         self._parent = parent
 
@@ -175,11 +178,15 @@ class ApiResourceInstance(object):
                 if isinstance(v, dict):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
                     if rsrc_type:
-                        self.fields[k] = ApiResourceInstance(v, rsrc_type)
+                        self.fields[k] = self._parent.api._object_cache.set(v['resource_uri'], ApiResourceInstance(v, rsrc_type))
                 elif isinstance(v, basestring):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
                     if rsrc_type:
                         self.fields[k] = ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True)
+
+
+    def update_fields(self, obj):
+        self.__dict__['fields'] = obj
 
 
     def __getattr__(self, name):
@@ -251,7 +258,8 @@ class ApiHelper(object):
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
-        self._cache = None
+        self._resource_cache = None
+        self._object_cache = ApiObjectCache(self)
 
         self.base_url = self._parse_base_url(base_url)
         self.auth_user = user_auth
@@ -259,8 +267,9 @@ class ApiHelper(object):
         self.api_secret = api_secret
         self.api_version = api_version
 
+
         if CACHED_API_RESOURCE_LIST is not None:
-            self._cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s:%s' % (self.base_url, self.api_version)))).rstrip('.')
+            self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s:%s' % (self.base_url, self.api_version)))).rstrip('.')
 
 
     def __getattr__(self, name):
@@ -276,22 +285,22 @@ class ApiHelper(object):
 
 
     def clear_resource_cache(self):
-        if self._cache is not None:
-            if os.path.isfile(self._cache):
-                os.remove(self._cache)
+        if self._resource_cache is not None:
+            if os.path.isfile(self._resource_cache):
+                os.remove(self._resource_cache)
                 self.resources = {}
                 self.resource_conf = {}
 
 
     def build_resources(self):
-        if self._cache is not None:
+        if self._resource_cache is not None:
             try:
-                with open(self._cache, 'r') as f:
+                with open(self._resource_cache, 'r') as f:
                     self.resource_conf = cPickle.load(f)
             except IOError:
                 self._fetch_resource_list()
                 try:
-                    with open(self._cache, 'w+') as f:
+                    with open(self._resource_cache, 'w+') as f:
                         cPickle.dump(self.resource_conf, f)
                 except IOError, e:
                     print "Couldn't write to stash file: %s" % e
@@ -310,7 +319,7 @@ class ApiHelper(object):
     def _parse_base_url(self, base_url):
         parsed = urlparse.urlparse(base_url)
         if parsed.netloc:
-            return 'https://' + parsed.netloc
+            return 'http://' + parsed.netloc
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
 
@@ -449,3 +458,46 @@ class ApiResponse(object):
     def __str__(self):
         return '%s %s %s\n%s' % (self.status_code, self.method.ljust(6), self.url, self.result)
 
+
+
+class ApiObjectCache(object):
+
+    def __init__(self, api, ttl=3600):
+        self.api = api
+        self.ttl = ttl
+        self._objects = {}
+        self._keys = self._objects.viewkeys()
+
+
+    def get(self, uri):
+        uri = self._strip_host(uri)
+        obj = self._objects.get(uri, None)
+        if obj:
+            if time.time() - obj[0] < self.ttl:
+                return obj[1]
+            else:
+                del self._objects[uri]
+        return None
+
+
+    def set(self, uri, obj):
+        uri = self._strip_host(uri)
+        # import pdb; pdb.set_trace()
+        if uri in self._objects:
+            self._objects[uri][1].update_fields(obj.fields)
+            return self._objects[uri][1]
+        else:
+            self._objects[uri] = (time.time(), obj)
+            return obj
+
+
+    def clear(self, uri):
+        uri = self._strip_host(uri)
+        if uri in self._objects:
+            del self._objects[uri]
+
+
+    def _strip_host(self, uri):
+        if uri.startswith(self.api.base_url):
+            uri = uri[len(self.api.base_url):]
+        return uri
