@@ -163,13 +163,23 @@ class ApiResourceList(object):
 
 class ApiResourceInstance(object):
 
-    def __init__(self, obj, parent):
+    def __init__(self, obj, parent, lazy=False):
         # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.__dict__['fields'] = obj
+        self._lazy = lazy
         self._parent = parent
+
+        # Loop through the fields populating foreign keys.
         for k,v in self.fields.items():
-            if k in parent.api.resource_conf and type(v) is dict and 'resource_uri' in v:
-                self.fields[k] = ApiResourceInstance(v, getattr(parent.api, k))
+            if k in parent._conf['fields'] and parent._conf['fields'][k].get('related_type', None) == 'to_one':
+                if isinstance(v, dict):
+                    rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
+                    if rsrc_type:
+                        self.fields[k] = ApiResourceInstance(v, rsrc_type)
+                elif isinstance(v, basestring):
+                    rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
+                    if rsrc_type:
+                        self.fields[k] = ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True)
 
 
     def __getattr__(self, name):
@@ -178,6 +188,9 @@ class ApiResourceInstance(object):
             if name == 'data':
                 return self._decode_data()
             return self.fields[name]
+        elif self._lazy and 'resource_uri' in self.fields:
+            self = self._parent.api.resource_from_uri(self.fields['resource_uri'])
+            return getattr(self, name)
         raise AttributeError("Attribute '%s' not found on %s" % (name, self._parent._conf['name']))
 
 
@@ -229,6 +242,7 @@ class ApiResourceInstance(object):
 
     def _decode_array(self, data):
         return [tuple(int(i) for i in v.split(',')) for v in data.strip('()[]').split('), (')]
+
 
 
 class ApiHelper(object):
@@ -340,13 +354,21 @@ class ApiHelper(object):
 
 
     def resource_from_uri(self, path):
-        if path.startswith(self.base_url):
-            path = path[len(self.base_url):]
-        uri,id = re.match('^(.+?)(\d+)/$', path).groups()
-        for k,r in self.resource_conf.items():
-            if r['list_endpoint'] == uri:
-                return getattr(self, k).get(id)
+        if path:
+            if path.startswith(self.base_url):
+                path = path[len(self.base_url):]
+            rsrc_type,id = self.resource_and_id_from_uri(path)
+            if rsrc_type:
+                return rsrc_type.get(id)
         return None
+
+
+    def resource_and_id_from_uri(self, path):
+        base_uri,id = re.match('^(.+?)(\d+)/$', path).groups()
+        for k,r in self.resource_conf.items():
+            if r['list_endpoint'] == base_uri:
+                return getattr(self, k), id
+        return None, None
 
 
     def _throw_http_exception(self, response):
