@@ -332,6 +332,9 @@ class ApiHelper(object):
             auth = self.auth_user
         if data:
             data = json.dumps(data)
+        if params:
+            # Make lists or sets comma-separated strings.
+            params = {k:','.join(str(i) for i in v) if isinstance(v, (tuple, list)) else v for k,v in params.items()}
         url = self.base_url + path
         headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
         if self.api_version:
