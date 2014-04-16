@@ -45,7 +45,7 @@ class ApiResourceAccessor(object):
         api_instance = self.api._object_cache.get(uri)
         if force_refresh or not api_instance or api_instance._lazy:
             response = self.api.get(uri)
-            api_instance = self.api._object_cache.set(uri, ApiResourceInstance(response.result, self))
+            api_instance = self.api._object_cache.set(ApiResourceInstance(response.result, self))
         return api_instance
 
 
@@ -54,9 +54,11 @@ class ApiResourceAccessor(object):
         data = self.api.convert_instances(data)
         response = self.api.post(self._conf['list_endpoint'], data, *args, **kwargs)
         if response.result:
-            return ApiResourceInstance(response.result, self)
+            return self.api._object_cache.set(ApiResourceInstance(response.result, self))
         else:
-            return response.headers['Location']
+            uri = response.headers['Location']
+            rsrc_type,id = self.api.resource_and_id_from_uri(uri)
+            return self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, self, lazy=True))
 
 
     def _verify_call(self, access_type, method):
@@ -171,7 +173,7 @@ class ApiResourceInstance(object):
                 if isinstance(v, dict):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
                     if rsrc_type:
-                        self.fields[k] = self._parent.api._object_cache.set(v['resource_uri'], ApiResourceInstance(v, rsrc_type))
+                        self.fields[k] = self._parent.api._object_cache.set(ApiResourceInstance(v, rsrc_type))
 
                 elif isinstance(v, basestring):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
@@ -180,7 +182,7 @@ class ApiResourceInstance(object):
                         rsrc = self._parent.api._object_cache.get(v)
                         # If not, create a lazy one.
                         if not rsrc:
-                            rsrc = self._parent.api._object_cache.set(v, ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True))
+                            rsrc = self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True))
                         self.fields[k] = rsrc
 
 
@@ -211,8 +213,9 @@ class ApiResourceInstance(object):
 
 
     def __repr__(self):
-        # return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', getattr(self, 'deviceid', None)))
-        return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', None))
+        # Lame exception for devices.  :(
+        pk = 'deviceid' if self._parent._name == 'device' else 'id'
+        return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, pk, None))
 
 
     def update(self, data=None, *args, **kwargs):
@@ -320,7 +323,7 @@ class ApiHelper(object):
     def _parse_base_url(self, base_url):
         parsed = urlparse(base_url)
         if parsed.netloc:
-            return 'https://' + parsed.netloc
+            return 'http://' + parsed.netloc
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
 
@@ -489,8 +492,8 @@ class ApiObjectCache(object):
         return None
 
 
-    def set(self, uri, obj):
-        uri = self._strip_host(uri)
+    def set(self, obj):
+        uri = obj.resource_uri
         if uri in self._objects:
             self._objects[uri][1].update_fields(obj.fields)
             return self._objects[uri][1]
