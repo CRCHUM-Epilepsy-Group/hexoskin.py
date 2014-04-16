@@ -120,6 +120,11 @@ class ApiResourceList(ApiResultList):
         return ApiResourceInstance(r, self._parent)
 
 
+    def __delitem__(self, key):
+        self[key].delete()
+        return super(ApiResourceList, self).__delitem__(key)
+
+
     def load_next(self):
         if self.nexturl:
             response = self._parent.api.get(self.nexturl)
@@ -156,7 +161,6 @@ class ApiResourceList(ApiResultList):
 class ApiResourceInstance(object):
 
     def __init__(self, obj, parent, lazy=False):
-        # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.update_fields(obj)
         self._lazy = lazy
         self._parent = parent
@@ -182,6 +186,7 @@ class ApiResourceInstance(object):
 
 
     def update_fields(self, obj):
+        # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
         self.__dict__['fields'] = obj
 
 
@@ -199,12 +204,10 @@ class ApiResourceInstance(object):
 
 
     def __setattr__(self, name, value):
-        if name in self.__dict__['fields']:
-            self.__dict__['fields'].update(self._parent.api.convert_instances({name:value}))
-        # elif hasattr(self, name):
+        if name in self.fields:
+            self.fields[name] = value
         else:
             super(ApiResourceInstance, self).__setattr__(name, value)
-        #     raise AttributeError
 
 
     def __repr__(self):
@@ -217,7 +220,7 @@ class ApiResourceInstance(object):
         if data is not None:
             for k,v in data.items():
                 setattr(self, k, v)
-        response = self._parent.api.put(self.fields['resource_uri'], self.fields, *args, **kwargs)
+        response = self._parent.api.put(self.fields['resource_uri'], self._parent.api.convert_instances(self.fields), *args, **kwargs)
 
         if response.result:
             self.fields = response.result.copy()
@@ -226,7 +229,7 @@ class ApiResourceInstance(object):
     def delete(self, *args, **kwargs):
         self._parent._verify_call('detail', 'delete')
         response = self._parent.api.delete(self.fields['resource_uri'], *args, **kwargs)
-        self.fields = dict((k, None) for k in self.fields.keys())
+        self.fields = {k: None for k in self.fields.keys()}
 
 
     def _decode_data(self):
@@ -317,12 +320,17 @@ class ApiHelper(object):
     def _parse_base_url(self, base_url):
         parsed = urlparse(base_url)
         if parsed.netloc:
-            return 'http://' + parsed.netloc
+            return 'https://' + parsed.netloc
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
 
     def convert_instances(self, value_dict):
-        return dict((k,v.resource_uri) if k in self.resources and type(v) is ApiResourceInstance else (k,v) for k,v in value_dict.items())
+        """
+        Converts all ApiResourceInstances into their uri_resource equivilant.
+        Since we don't update child properties, this makes everything work
+        more smoothly when sending data to the API.
+        """
+        return {k: v.resource_uri if k in self.resources and type(v) is ApiResourceInstance else v for k,v in value_dict.items()}
 
 
     def _request(self, path, method, data=None, params=None, auth=None):

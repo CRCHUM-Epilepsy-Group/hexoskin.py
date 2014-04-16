@@ -42,9 +42,9 @@ Note that the API resources contained in the record, such as record.user, have a
 
     print record[0].user
 
-You can get the next page by calling next() on the list.
+You can get the next page by calling load_next() on the list.
 
-    records.next()
+    records.load_next()
 
 The next page will be appended to the existing list.  If there is no next page a Index error exception is raised.  You can check if there is a next page by look at the list's `nexturl`.
 
