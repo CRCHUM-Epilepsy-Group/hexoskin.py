@@ -1,10 +1,12 @@
-import base64, cPickle, hashlib, json, os, re, struct, time, urlparse
+import base64, cPickle, hashlib, json, os, re, struct, time
 import requests
-from requests.auth import HTTPBasicAuth
+from collections import deque
+from urlparse import parse_qs, urlparse
 from hexoskin.errors import *
 
 
 CACHED_API_RESOURCE_LIST = '.api_stash'
+
 
 class ApiResourceAccessor(object):
 
@@ -23,7 +25,10 @@ class ApiResourceAccessor(object):
 
         # TODO: Replace with a reasonable method of determining the response type.
         if type(response.result) is list:
-            return ApiDataList(response, self)
+            if parse_qs(urlparse(response.url).query).get('flat', False):
+                return ApiFlatDataList(response, self)
+            else:
+                return ApiDataList(response, self)
         else:
             return ApiResourceList(response, self)
 
@@ -33,12 +38,12 @@ class ApiResourceAccessor(object):
         return self.api.patch(self._conf['list_endpoint'], {'objects':new_objects}, *args, **kwargs)
 
 
-    def get(self, uri):
+    def get(self, uri, force_refresh=False):
         self._verify_call('detail', 'get')
         if type(uri) is int or self._conf['list_endpoint'] not in uri:
             uri = '%s%s/' % (self._conf['list_endpoint'], uri)
         api_instance = self.api._object_cache.get(uri)
-        if not api_instance:
+        if force_refresh or not api_instance or api_instance._lazy:
             response = self.api.get(uri)
             api_instance = self.api._object_cache.set(uri, ApiResourceInstance(response.result, self))
         return api_instance
@@ -60,29 +65,27 @@ class ApiResourceAccessor(object):
 
 
 
-class ApiDataList(object):
+class ApiResultList(deque):
 
     def __init__(self, response, parent):
         self._parent = parent
         self.response = response
-        for i,v in enumerate(self.response.result):
-            self.response.result[i] = ApiDataResult(v, parent)
+        super(ApiResultList, self).__init__(self._make_list(response))
 
 
-    def __getitem__(self, key):
-        return self.response.result[key]
+    def _make_list(self, response):
+        return map(self._make_list_item, response.result)
 
 
-    def __iter__(self):
-        return iter(self.response.result)
+    def _make_list_item(self, r):
+        return r
 
 
-    def __reversed__(self):
-        return reversed(self.response.result)
 
+class ApiDataList(ApiResultList):
 
-    def __len__(self):
-        return len(self.response.result)
+    def _make_list_item(self, r):
+        return ApiDataResult(r, self._parent)
 
 
 
@@ -90,22 +93,34 @@ class ApiDataResult(object):
 
     def __init__(self, row, parent):
         self.record = [ApiResourceInstance(r, parent.api.record) for r in row.get('record', [])]
-        self.data = dict((int(d), v) for d,v in row['data'].items())
         self.user = row['user']
+        self.data = {int(d):v for d,v in row['data'].items()}
 
 
 
-class ApiResourceList(object):
+class ApiFlatDataList(ApiResultList):
+
+    def _make_list(self, response):
+        return response.result
+
+
+
+class ApiResourceList(ApiResultList):
 
     def __init__(self, response, parent):
-        self._parent = parent
-        self.response = response
-        self.nexturl = None
-        self.objects = []
-        self._append_response(self.response)
+        super(ApiResourceList, self).__init__(response, parent)
+        self._set_next_prev(response)
 
 
-    def next(self):
+    def _make_list(self, response):
+        return map(self._make_list_item, response.result['objects'])
+
+
+    def _make_list_item(self, r):
+        return ApiResourceInstance(r, self._parent)
+
+
+    def load_next(self):
         if self.nexturl:
             response = self._parent.api.get(self.nexturl)
             self._append_response(response)
@@ -113,7 +128,7 @@ class ApiResourceList(object):
             raise IndexError('List is already at the end.')
 
 
-    def prev(self):
+    def load_prev(self):
         if self.prevurl:
             response = self._parent.api.get(self.prevurl)
             self._append_response(response, prepend=True)
@@ -122,45 +137,19 @@ class ApiResourceList(object):
 
 
     def _append_response(self, response, prepend=False):
-        self.nexturl = None
-        self.prevurl = None
         try:
-            self.nexturl = response.result['meta'].get('next', None)
-            self.prevurl = response.result['meta'].get('prev', None)
-            converted = [ApiResourceInstance(o, self._parent) for o in response.result['objects']]
+            self._set_next_prev(response)
             if prepend is True:
-                self.objects = converted + self.objects
+                self.extendleft(self._make_list(response))
             else:
-                self.objects += converted
+                self.extend(self._make_list(response))
         except KeyError, e:
             raise ApiError('Cannot parse results, unexpected content received! %s \nFirst 64 chars of content: %s' % (e, response.body[:64]))
 
 
-    def __getitem__(self, key):
-        if type(key) is int:
-            return self.objects[key]
-        else:
-            return self.response.result[key]
-
-
-    def __delitem__(self, key):
-        if type(key) is int:
-            self.objects[key].delete()
-            del self.objects[key]
-        else:
-            return super(ApiResourceList, self).__delitem__(key)
-
-
-    def __iter__(self):
-        return iter(self.objects)
-
-
-    def __reversed__(self):
-        return reversed(self.objects)
-
-
-    def __len__(self):
-        return len(self.objects)
+    def _set_next_prev(self, response):
+        self.nexturl = response.result['meta'].get('next', None)
+        self.prevurl = response.result['meta'].get('prev', None)
 
 
 
@@ -179,10 +168,17 @@ class ApiResourceInstance(object):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
                     if rsrc_type:
                         self.fields[k] = self._parent.api._object_cache.set(v['resource_uri'], ApiResourceInstance(v, rsrc_type))
+
                 elif isinstance(v, basestring):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
                     if rsrc_type:
-                        self.fields[k] = ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True)
+                        # Is there already a cached object?
+                        rsrc = self._parent.api._object_cache.get(v)
+                        # If not, create a lazy one.
+                        if not rsrc:
+                            rsrc = self._parent.api._object_cache.set(v, ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True))
+                        self.fields[k] = rsrc
+
 
 
     def update_fields(self, obj):
@@ -196,7 +192,8 @@ class ApiResourceInstance(object):
                 return self._decode_data()
             return self.fields[name]
         elif self._lazy and 'resource_uri' in self.fields:
-            self = self._parent.api.resource_from_uri(self.fields['resource_uri'])
+            self._parent.api.resource_from_uri(self.fields['resource_uri'])
+            self._lazy = False
             return getattr(self, name)
         raise AttributeError("Attribute '%s' not found on %s" % (name, self._parent._conf['name']))
 
@@ -211,7 +208,8 @@ class ApiResourceInstance(object):
 
 
     def __repr__(self):
-        return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', getattr(self, 'deviceid', None)))
+        # return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', getattr(self, 'deviceid', None)))
+        return '<%s.%s: %s>' % (self.__module__, self._parent._name, getattr(self, 'id', None))
 
 
     def update(self, data=None, *args, **kwargs):
@@ -317,7 +315,7 @@ class ApiHelper(object):
 
 
     def _parse_base_url(self, base_url):
-        parsed = urlparse.urlparse(base_url)
+        parsed = urlparse(base_url)
         if parsed.netloc:
             return 'http://' + parsed.netloc
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
@@ -371,7 +369,7 @@ class ApiHelper(object):
                 path = path[len(self.base_url):]
             rsrc_type,id = self.resource_and_id_from_uri(path)
             if rsrc_type:
-                return rsrc_type.get(id)
+                return rsrc_type.get(path)
         return None
 
 
@@ -402,7 +400,7 @@ class ApiHelper(object):
 
 
 
-class HexoAuth(HTTPBasicAuth):
+class HexoAuth(requests.auth.HTTPBasicAuth):
 
     def __init__(self, api_key, api_secret, auth_user=None):
         self.username = None
@@ -485,7 +483,6 @@ class ApiObjectCache(object):
 
     def set(self, uri, obj):
         uri = self._strip_host(uri)
-        # import pdb; pdb.set_trace()
         if uri in self._objects:
             self._objects[uri][1].update_fields(obj.fields)
             return self._objects[uri][1]
