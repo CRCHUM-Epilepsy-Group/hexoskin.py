@@ -1,4 +1,4 @@
-import base64, cPickle, hashlib, json, os, re, struct, time
+import csv, base64, cPickle, hashlib, json, os, re, struct, time
 import requests
 from collections import deque
 from urlparse import parse_qs, urlparse
@@ -16,21 +16,29 @@ class ApiResourceAccessor(object):
         self.api = api
 
 
-    def list(self, get_args=None, **kwargs):
+    def list(self, get_args=None, format=None, **kwargs):
         self._verify_call('list', 'get')
         get_args = get_args or {}
         get_args.update(kwargs)
         get_args = self.api.convert_instances(get_args)
-        response = self.api.get(self._conf['list_endpoint'], get_args)
+        hdrs = {'headers':{'Accept': format}} if format else {}
+        response = self.api.get(self._conf['list_endpoint'], get_args, **hdrs)
 
-        # TODO: Replace with a reasonable method of determining the response type.
-        if type(response.result) is list:
-            if parse_qs(urlparse(response.url).query).get('flat', False):
-                return ApiFlatDataList(response, self)
+        ctype = response.content_type
+
+        if ctype == 'application/json':
+            is_data, is_flat = self._is_data_response(response)
+            if is_data:
+                if is_flat:
+                    return ApiFlatDataList(response, self)
+                else:
+                    return ApiDataList(response, self)
             else:
-                return ApiDataList(response, self)
-        else:
-            return ApiResourceList(response, self)
+                return ApiResourceList(response, self)
+        elif ctype == 'text/csv':
+            return ApiCSVResult(response, self)
+        elif ctype == 'application/octet-stream':
+            return ApiBinaryResult(response, self)
 
 
     def patch(self, new_objects, *args, **kwargs):
@@ -66,13 +74,47 @@ class ApiResourceAccessor(object):
             raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self._conf['name'], access_type))
 
 
+    def _is_data_response(self, response):
+        # TODO: Replace with a reasonable method of determining the response
+        # type.
+        is_data = isinstance(response.result, (list, basestring))
+        if is_data:
+            is_flat = parse_qs(urlparse(response.url).query).get('flat', False)
+            return is_data, is_flat
+        return False, False
 
-class ApiResultList(deque):
+
+
+class ApiResult(object):
 
     def __init__(self, response, parent):
         self._parent = parent
         self.response = response
-        super(ApiResultList, self).__init__(self._make_list(response))
+
+
+
+class ApiCSVResult(ApiResult, list):
+
+    def __init__(self, response, parent):
+        super(ApiCSVResult, self).__init__(response, parent)
+        self.csv = csv.reader(response.result.splitlines())
+        list.__init__(self, self.csv)
+
+
+
+class ApiBinaryResult(ApiResult, bytearray):
+
+    def __init__(self, response, parent):
+        super(ApiBinaryResult, self).__init__(response, parent)
+        bytearray.__init__(self, response.result)
+
+
+
+class ApiResultList(ApiResult, deque):
+
+    def __init__(self, response, parent):
+        super(ApiResultList, self).__init__(response, parent)
+        deque.__init__(self, self._make_list(response))
 
 
     def _make_list(self, response):
@@ -336,7 +378,7 @@ class ApiHelper(object):
         return {k: v.resource_uri if k in self.resources and type(v) is ApiResourceInstance else v for k,v in value_dict.items()}
 
 
-    def _request(self, path, method, data=None, params=None, auth=None):
+    def _request(self, path, method, data=None, params=None, auth=None, headers=None):
         if auth is None:
             auth = self.auth_user
         if data:
@@ -345,10 +387,12 @@ class ApiHelper(object):
             # Make lists or sets comma-separated strings.
             params = {k:','.join(str(i) for i in v) if isinstance(v, (tuple, list)) else v for k,v in params.items()}
         url = self.base_url + path
-        headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
+        req_headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
         if self.api_version:
-            headers['X-HexoAPIVersion'] = self.api_version
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=headers, auth=HexoAuth(self.api_key, self.api_secret, auth), verify=False), method)
+            req_headers['X-HexoAPIVersion'] = self.api_version
+        if headers:
+            req_headers.update(headers)
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=HexoAuth(self.api_key, self.api_secret, auth), verify=False), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
@@ -358,8 +402,8 @@ class ApiHelper(object):
         return self._request(path, 'post', data, auth=auth)
 
 
-    def get(self, path, data=None, auth=None):
-        return self._request(path, 'get', params=data, auth=auth)
+    def get(self, path, data=None, auth=None, headers=None):
+        return self._request(path, 'get', params=data, auth=auth, headers=headers)
 
 
     def put(self, path, data=None, auth=None):
@@ -464,8 +508,15 @@ class ApiResponse(object):
     def success(self):
         200 <= self.status_code < 400
 
+
+    @property
+    def content_type(self):
+        return self.headers.get('content-type', '').split(';')[0]
+
+
     def __getattr__(self, attr):
         return getattr(self.response, attr)
+
 
     def __str__(self):
         return '%s %s %s\n%s' % (self.status_code, self.method.ljust(6), self.url, self.result)
