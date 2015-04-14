@@ -16,13 +16,13 @@ class ApiResourceAccessor(object):
         self.api = api
 
 
-    def list(self, get_args=None, format=None, **kwargs):
+    def list(self, get_args=None, format=None, auth=None, **kwargs):
         self._verify_call('list', 'get')
         get_args = get_args or {}
         get_args.update(kwargs)
         get_args = self.api.convert_instances(get_args)
         hdrs = {'headers':{'Accept': format}} if format else {}
-        response = self.api.get(self._conf['list_endpoint'], get_args, **hdrs)
+        response = self.api.get(self._conf['list_endpoint'], get_args, auth=auth, **hdrs)
 
         ctype = response.content_type
 
@@ -41,32 +41,37 @@ class ApiResourceAccessor(object):
             return ApiBinaryResult(response, self)
 
 
-    def patch(self, new_objects, *args, **kwargs):
+    def patch(self, new_objects, auth=None, *args, **kwargs):
         self._verify_call('list', 'patch')
-        return self.api.patch(self._conf['list_endpoint'], {'objects':new_objects}, *args, **kwargs)
+        return self.api.patch(self._conf['list_endpoint'], {'objects':new_objects}, auth=auth, *args, **kwargs)
 
 
-    def get(self, uri, force_refresh=False):
+    def get(self, uri, auth=None, force_refresh=False):
         self._verify_call('detail', 'get')
         if type(uri) is int or self._conf['list_endpoint'] not in uri:
             uri = '%s%s/' % (self._conf['list_endpoint'], uri)
         api_instance = self.api._object_cache.get(uri)
         if force_refresh or not api_instance or api_instance._lazy:
-            response = self.api.get(uri)
+            response = self.api.get(uri, auth=auth)
             api_instance = self.api._object_cache.set(ApiResourceInstance(response.result, self))
         return api_instance
 
 
-    def create(self, data, *args, **kwargs):
+    def create(self, data, auth=None, *args, **kwargs):
         self._verify_call('list', 'post')
         data = self.api.convert_instances(data)
-        response = self.api.post(self._conf['list_endpoint'], data, *args, **kwargs)
+        response = self.api.post(self.endpoint, data, auth=auth, *args, **kwargs)
         if response.result:
             return self.api._object_cache.set(ApiResourceInstance(response.result, self))
         else:
             uri = response.headers['Location']
             rsrc_type,id = self.api.resource_and_id_from_uri(uri)
             return self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, self, lazy=True))
+
+
+    @property
+    def endpoint(self):
+        return self._conf['list_endpoint']
 
 
     def _verify_call(self, access_type, method):
@@ -161,7 +166,7 @@ class ApiResourceList(ApiResultList):
 
 
     def _make_list_item(self, r):
-        return ApiResourceInstance(r, self._parent)
+        return self._parent.api._object_cache.set(ApiResourceInstance(r, self._parent))
 
 
     def __delitem__(self, key):
@@ -381,7 +386,7 @@ class ApiHelper(object):
     def _request(self, path, method, data=None, params=None, auth=None, headers=None):
         if auth is None:
             auth = self.auth_user
-        if data:
+        if data and not isinstance(data, basestring):
             data = json.dumps(data)
         if params:
             # Make lists or sets comma-separated strings.
@@ -398,24 +403,24 @@ class ApiHelper(object):
         return response
 
 
-    def post(self, path, data=None, auth=None):
-        return self._request(path, 'post', data, auth=auth)
+    def post(self, path, data=None, auth=None, **kwargs):
+        return self._request(path, 'post', data, auth=auth, **kwargs)
 
 
-    def get(self, path, data=None, auth=None, headers=None):
-        return self._request(path, 'get', params=data, auth=auth, headers=headers)
+    def get(self, path, data=None, auth=None, **kwargs):
+        return self._request(path, 'get', params=data, auth=auth, **kwargs)
 
 
-    def put(self, path, data=None, auth=None):
-        return self._request(path, 'put', data, auth=auth)
+    def put(self, path, data=None, auth=None, **kwargs):
+        return self._request(path, 'put', data, auth=auth, **kwargs)
 
 
-    def patch(self, path, data=None, auth=None):
-        return self._request(path, 'patch', data, auth=auth)
+    def patch(self, path, data=None, auth=None, **kwargs):
+        return self._request(path, 'patch', data, auth=auth, **kwargs)
 
 
-    def delete(self, path, auth=None):
-        return self._request(path, 'delete', auth=auth)
+    def delete(self, path, auth=None, **kwargs):
+        return self._request(path, 'delete', auth=auth, **kwargs)
 
 
     def resource_from_uri(self, path):
@@ -500,7 +505,6 @@ class ApiResponse(object):
         except:
             self.result = response.content
         self.body = response.content
-        self.status_code = response.status_code
         self.url = response.request.url
         self.method = method.upper()
         self.response = response
