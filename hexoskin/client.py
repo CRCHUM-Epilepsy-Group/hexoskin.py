@@ -210,13 +210,22 @@ class ApiResourceList(ApiResultList):
 class ApiResourceInstance(object):
 
     def __init__(self, obj, parent, lazy=False):
-        self.update_fields(obj)
+        self.__dict__['fields'] = {}
         self._lazy = lazy
         self._parent = parent
+        self.update_fields(obj)
 
+
+    def update_fields(self, obj):
+        # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
+        self.__dict__['fields'] = obj
+        self._link_instances()
+
+
+    def _link_instances(self):
         # Loop through the fields populating foreign keys.
         for k,v in self.fields.items():
-            if k in parent._conf['fields'] and parent._conf['fields'][k].get('related_type', None) == 'to_one':
+            if k in self._parent._conf['fields'] and self._parent._conf['fields'][k].get('related_type', None) == 'to_one':
                 if isinstance(v, dict):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
                     if rsrc_type:
@@ -231,12 +240,6 @@ class ApiResourceInstance(object):
                         if not rsrc:
                             rsrc = self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True))
                         self.fields[k] = rsrc
-
-
-
-    def update_fields(self, obj):
-        # Skip __setattr__ for this one. Should we derive from parent._conf.fields instead?
-        self.__dict__['fields'] = obj
 
 
     def __getattr__(self, name):
@@ -271,9 +274,9 @@ class ApiResourceInstance(object):
             for k,v in data.items():
                 setattr(self, k, v)
         response = self._parent.api.put(self.fields['resource_uri'], self._parent.api.convert_instances(self.fields), *args, **kwargs)
-
         if response.result:
-            self.fields = response.result.copy()
+            self.update_fields(response.result.copy())
+        return response
 
 
     def delete(self, *args, **kwargs):
