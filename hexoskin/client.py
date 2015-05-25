@@ -1,7 +1,8 @@
-import csv, base64, cPickle, hashlib, json, os, re, struct, time
+import binascii, base64, cPickle, csv, hashlib, hmac, json, os, random, re, struct, time, urllib
 import requests
 from collections import deque
-from urlparse import parse_qs, urlparse
+from hashlib import sha1
+from urlparse import parse_qsl, urlparse
 from hexoskin.errors import *
 
 
@@ -84,7 +85,7 @@ class ApiResourceAccessor(object):
         # type.
         is_data = isinstance(response.result, (list, basestring))
         if is_data:
-            is_flat = parse_qs(urlparse(response.url).query).get('flat', False)
+            is_flat = oauth_parse_qs(response.url).get('flat', False)
             return is_data, is_flat
         return False, False
 
@@ -308,19 +309,18 @@ class ApiResourceInstance(object):
 
 class ApiHelper(object):
 
-    def __init__(self, base_url=None, user_auth=None, api_key=None, api_secret=None, api_version=''):
+    def __init__(self, api_key=None, api_secret=None, api_version='', auth=None, base_url=None):
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
         self._resource_cache = None
         self._object_cache = ApiObjectCache(self)
 
-        self.base_url = self._parse_base_url(base_url)
-        self.auth_user = user_auth
         self.api_key = api_key
         self.api_secret = api_secret
         self.api_version = api_version
-
+        self.auth = self._create_auth(auth)
+        self.base_url = self._parse_base_url(base_url)
 
         if CACHED_API_RESOURCE_LIST is not None:
             self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s:%s' % (self.base_url, self.api_version)))).rstrip('.')
@@ -362,6 +362,19 @@ class ApiHelper(object):
             self._fetch_resource_list()
 
 
+    def _create_auth(self, auth):
+        if not auth:
+            return None
+        elif isinstance(auth, (requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token)):
+            return auth
+        elif isinstance(auth, basestring):
+            return HexoAuth(*auth.split(':'))
+        elif len(auth) == 2:
+            return HexoAuth(*auth)
+        else:
+            return None
+
+
     def _fetch_resource_list(self):
         resource_list = self.get('/api/v1/').result
         for n,r in resource_list.iteritems():
@@ -387,8 +400,7 @@ class ApiHelper(object):
 
 
     def _request(self, path, method, data=None, params=None, auth=None, headers=None):
-        if auth is None:
-            auth = self.auth_user
+        auth = self._create_auth(auth) if auth else self.auth
         if data and not isinstance(data, basestring):
             data = json.dumps(data)
         if params:
@@ -400,30 +412,30 @@ class ApiHelper(object):
             req_headers['X-HexoAPIVersion'] = self.api_version
         if headers:
             req_headers.update(headers)
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=HexoAuth(self.api_key, self.api_secret, auth), verify=False), method)
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, verify=False), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
 
 
-    def post(self, path, data=None, auth=None, **kwargs):
-        return self._request(path, 'post', data, auth=auth, **kwargs)
+    def post(self, path, data=None, auth=None, headers=None):
+        return self._request(path, 'post', data, auth=auth, headers=headers)
 
 
-    def get(self, path, data=None, auth=None, **kwargs):
-        return self._request(path, 'get', params=data, auth=auth, **kwargs)
+    def get(self, path, data=None, auth=None, headers=None):
+        return self._request(path, 'get', params=data, auth=auth, headers=headers)
 
 
-    def put(self, path, data=None, auth=None, **kwargs):
-        return self._request(path, 'put', data, auth=auth, **kwargs)
+    def put(self, path, data=None, auth=None, headers=None):
+        return self._request(path, 'put', data, auth=auth, headers=headers)
 
 
-    def patch(self, path, data=None, auth=None, **kwargs):
-        return self._request(path, 'patch', data, auth=auth, **kwargs)
+    def patch(self, path, data=None, auth=None, headers=None):
+        return self._request(path, 'patch', data, auth=auth, headers=headers)
 
 
-    def delete(self, path, auth=None, **kwargs):
-        return self._request(path, 'delete', auth=auth, **kwargs)
+    def delete(self, path, auth=None, headers=None):
+        return self._request(path, 'delete', auth=auth, headers=headers)
 
 
     def resource_from_uri(self, path):
@@ -462,36 +474,237 @@ class ApiHelper(object):
         raise HttpError(response)
 
 
+    def oauth1_get_request_token_url(self, callback_uri):
+        self.auth = OAuth1Token(self.api_key, self.api_secret, oauth_callback=callback_uri)
+        # oauth_header = create_oauth_header(oauth, 'POST', request_token_url, secret)
+        # return requests.post(request_token_url, headers={'Authorization': oauth_header})
+        resp = self.post('/oauth/request_token')
+        tokens = oauth_parse_qs(resp.content)
+        self.auth.set(**tokens)
+        return '%s/oauth/authorize?oauth_token=%s' % (self.base_url, tokens['oauth_token'])
+
+
+    def oauth1_get_access_token(self, url):
+        tokens = oauth_parse_qs(url)
+        self.auth.oauth_verifier = tokens['oauth_verifier']
+        resp = self.post('/oauth/access_token')
+        self.auth.set(**oauth_parse_qs(resp.content))
+        return self.auth
+
+
+    def oauth2_get_request_token_url(self, callback_uri, grant_type='authorization_code', scope='readonly'):
+        self.auth = OAuth2Token(self.api_key, self.api_secret)
+        self.auth.callback_uri = callback_uri
+        self.auth.grant_type = grant_type
+        self.auth.scope = scope
+        get_args = {
+            'response_type': self.auth.response_type,
+            'state': self.auth.generate_state(),
+            'client_id': self.api_key,
+            'scope': self.auth.scope,
+            'redirect_uri': self.auth.callback_uri,
+        }
+        querystr = '&'.join('%s=%s' % (k, oauth_encode(v)) for k,v in get_args.items())
+        return '%s/api/connect/oauth2/auth/?%s' % (self.base_url, querystr)
+
+
+    def oauth2_get_access_token(self, *args, **kwargs):
+        """
+        Gets the access token from the URL returned by an oauth2 user
+        authentication or from a user/pass combination for a password
+        grant_type client.
+        """
+        if len(args) == 1:
+            url = args[0]
+            bits = oauth_parse_qs(url, fragment=self.auth.response_type == 'token')
+            if self.auth.state != bits['state']:
+                raise Exception("State verification failed! Couldn't find %s in %s" % (self.auth.state, bits))
+            if self.auth.response_type == 'code':
+                return self._fetch_oauth2_access_token(
+                    grant_type='authorization_code',
+                    code=bits['code'],
+                    redirect_uri=self.auth.callback_uri
+                )
+            elif self.auth.response_type == 'token':
+                self.auth.set(**bits)
+                return self.auth
+        elif len(args) == 2:
+            kwargs.update(zip(('username', 'password'), args))
+            self.auth = OAuth2Token(self.api_key, self.api_secret)
+            return self._fetch_oauth2_access_token(grant_type='password', **kwargs)
+        else:
+            raise ValueError('Unexpected arguments passed to oauth2_get_access_token()')
+
+
+    def _fetch_oauth2_access_token(self, **kwargs):
+        basicauth = requests.auth.HTTPBasicAuth(self.api_key, self.api_secret)
+        # response = self.post('/api/connect/oauth2/token/', auth=basicauth, data=kwargs)
+        response = requests.post('%s/api/connect/oauth2/token/' % self.base_url, data=kwargs, auth=basicauth)
+        if response.status_code >= 400:
+            self._throw_http_exception(response)
+        self.auth.set(**response.json())
+        return self.auth
+
+
 
 class HexoAuth(requests.auth.HTTPBasicAuth):
+    """
+    Supports BasicAuth and Hexo signatures.
+    """
 
-    def __init__(self, api_key, api_secret, auth_user=None):
-        self.username = None
-        self.password = None
+    def __init__(self, api_key, api_secret, auth, password=None):
+        self.auth = auth
         self.api_key = api_key
         self.api_secret = api_secret
-        if auth_user is not None:
-            self.username, self.password = auth_user.split(':')
+        if not password:
+            self.username, self.password = auth.split(':')
+        else:
+            self.username = auth
+            self.password = password
 
-    def __call__(self, r):
-        if self.username and self.password:
-            r = super(HexoAuth, self).__call__(r)
+
+    def __call__(self, request):
+        request = super(HexoAuth, self).__call__(request)
         ts = int(time.time())
-        digest = hashlib.sha1('%s%s%s' % (self.api_secret, ts, r.url)).hexdigest()
-        r.headers['X-HEXOTIMESTAMP'] = ts
-        r.headers['X-HEXOAPIKEY'] = self.api_key
-        r.headers['X-HEXOAPISIGNATURE'] = digest
-        # print '(%s, %s, %s) = %s' % (self.api_secret, ts, r.url, digest)
-        return r
+        digest = hashlib.sha1('%s%s%s' % (self.api_secret, ts, request.url)).hexdigest()
+        request.headers['X-HEXOTIMESTAMP'] = ts
+        request.headers['X-HEXOAPIKEY'] = self.api_key
+        request.headers['X-HEXOAPISIGNATURE'] = digest
+        # print '(%s, %s, %s) = %s' % (self.api_secret, ts, request.url, digest)
+        return request
+
+
+
+class OAuth1Token(object):
+    """
+    Basic OAuth1 support in combination with ApiHelper.
+    """
+
+    __slots__ = (
+        'oauth_consumer_key',
+        'oauth_consumer_secret',
+        'oauth_callback',
+        'oauth_token',
+        'oauth_token_secret',
+        'oauth_authorized_realms',
+        'oauth_verifier',
+        'oauth_callback_confirmed',
+    )
+
+    _request_keys = ('oauth_callback', 'oauth_token', 'oauth_token_secret', 'oauth_verifier')
+
+
+    def __init__(self, oauth_consumer_key, oauth_consumer_secret, **kwargs):
+        self.oauth_consumer_key = oauth_consumer_key
+        self.oauth_consumer_secret = oauth_consumer_secret
+        self.set(**kwargs)
+
+
+    def set(self, **kwargs):
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+
+
+    def _request_args(self):
+        return dict(filter(lambda kv:kv[1] is not None, [(k, getattr(self, k, None)) for k in self._request_keys]))
+
+
+    def __call__(self, request):
+        req_params = oauth_parse_qs(request.url)
+        oauth_vars = self._request_args()
+        token_secret = oauth_vars.pop('oauth_token_secret', '')
+        key = '&'.join(oauth_encode(i) for i in [self.oauth_consumer_secret, token_secret])
+
+        oauth_vars['oauth_consumer_key'] = self.oauth_consumer_key
+        oauth_vars['oauth_signature_method'] = 'HMAC-SHA1'
+        oauth_vars['oauth_nonce'] = random.randint(1000000,9999999)
+        oauth_vars['oauth_timestamp'] = int(time.time())
+
+        oauth_vars = {oauth_encode(k): oauth_encode(str(v)) for k,v in oauth_vars.items()}
+
+        params = oauth_vars.copy()
+        params.pop('realms', None)
+        params.update(req_params or {})
+        params_str = '&'.join('%s=%s'%(k,v) for k,v in sorted(params.items()))
+
+        qpos = request.url.rfind('?')
+        uri = request.url[:qpos if qpos > -1 else len(request.url)]
+        base_str = '&'.join(oauth_encode(i) for i in [request.method.upper(), uri, params_str])
+
+        oauth_vars['oauth_signature'] = oauth_encode(binascii.b2a_base64(hmac.new(key, base_str, sha1).digest())[:-1])
+        # print ' key: %s' % key
+        # print ' params: %s' % params
+        # print ' base_str: %s' % base_str
+        # print ' sig: %s' % oauth_vars['oauth_signature']
+
+        request.headers['Authorization'] = 'OAuth ' + ','.join('%s="%s"'%(k,v) for k,v in oauth_vars.items())
+        return request
+
+
+
+class OAuth2Token(object):
+    """
+    Basic OAuth2 support in combination with ApiHelper.
+    """
+
+    __slots__ = (
+        '_grant_type',
+        'access_token',
+        'callback_uri',
+        'expires_in',
+        'key',
+        'refresh_token',
+        'response_type',
+        'scope',
+        'secret',
+        'state',
+        'token_type',
+    )
+
+
+    def __init__(self, key, secret, **kwargs):
+        self.key = key
+        self.secret = secret
+
+
+    def __call__(self, request):
+        request.headers['Authorization'] = 'Bearer %s' % self.access_token
+        return request
+
+
+    def generate_state(self):
+        self.state = str(random.randint(1000000,9999999))
+        return self.state
+
+
+    def set(self, **kwargs):
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+
+
+    @property
+    def grant_type(self):
+        return self._grant_type
+
+
+    @grant_type.setter
+    def grant_type(self, val):
+        if val == 'authorization_code':
+            self.response_type = 'code'
+        elif val == 'implicit':
+            self.response_type = 'token'
+        elif val != 'password':
+            raise ValueError('Invalid or unsupported grant_type specified.')
+        self._grant_type = val
 
 
 
 class HexoApi(ApiHelper):
 
-    def __init__(self, api_key, api_secret, base_url=None, user_auth=None, api_version=''):
+    def __init__(self, api_key, api_secret, api_version='', user_auth=None, base_url=None):
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(base_url, user_auth, api_key, api_secret, api_version)
+        return super(HexoApi, self).__init__(api_key, api_secret, api_version, user_auth, base_url)
 
 
 
@@ -570,3 +783,17 @@ class ApiObjectCache(object):
         if uri.startswith(self.api.base_url):
             uri = uri[len(self.api.base_url):]
         return uri
+
+
+
+def oauth_parse_qs(url, fragment=False):
+    """
+    Accepts either an URL or just the query string, or optionally will look
+    only in the fragment.
+    """
+    bits = urlparse(url)
+    return dict(parse_qsl(bits.fragment if fragment else bits.query or bits.path))
+
+
+def oauth_encode(val):
+    return urllib.quote(val, '-._~')
