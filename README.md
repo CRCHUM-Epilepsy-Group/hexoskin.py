@@ -9,12 +9,54 @@ This client requires the `requests` python library.
 
 Initialize a client instance like this:
 
-    api = hexoskin.client.HexoApi('myAPIkey', 'myAPIsecret', user_auth='someuser@hexoskin.com:someuserpassword')
+    api = hexoskin.client.HexoApi('myAPIkey', 'myAPIsecret')
+
+
+# Authorization
+
+You may pass an authorization object to each request using the `auth` keyword arg:
+
+    trainingroutines = api.trainingroutine.list(auth='someuser@hexoskin.com:someuserpassword')
+
+This might suit your needs, but if you'll be using the same user for all your requests, you can pass it to the api constructor, or set the `auth` attribute on an existing api object:
+
+    api = hexoskin.client.HexoApi('myAPIkey', 'myAPIsecret', auth='someuser@hexoskin.com:someuserpassword')
+    api.auth = 'someuser@hexoskin.com:someuserpassword'
+
+The library contains some helper functions for OAuth1 and OAuth2 to help ease the integration process.  For each, there is a method to generate an authorization URL to send the user to, and a method to handle the result of the callback.
+
+For OAuth2 there are three possible options depending on your client grant type.
+
+OAuth2 authentication_code:
+
+    url = api.oauth2_get_request_token_url(callback_uri, grant_type='authorization_code', scope='readonly')
+    # Then later after receiving the callback, pass the entire URL into the helper function.
+    api.oauth2_get_access_token(callback_uri_with_args)
+
+OAuth2 implicit:
+
+    url = api.oauth2_get_request_token_url(callback_uri, grant_type='implicit', scope='readonly')
+    # Then later after receiving the callback, pass the entire URL into the helper function.
+    api.oauth2_get_access_token(callback_uri_with_args)
+
+OAuth2 password:
+
+    api.oauth2_get_access_token('username', 'password', scope='readonly')
+
+`callback_uri` should be a valid URL that you control and is in the list of callbacks for your client.  The scope does not have to be 'readonly', but it has to be a scope that is in your client's list of allowed scopes.  At the moment, there are only two scopes, 'readonly' and 'readwrite'.
+
+There is only one flow for OAuth1:
+
+    api.oauth1_get_request_token_url(callback_uri)
+    # Then later after receiving the callback, pass the entire URL into the helper function.
+    api.oauth1_get_access_token(callback_uri_with_args)
+
+For every OAuth flow, the `api.auth` attribute is populated for you, after a successful OAuth authentication, you can make requests without passing an auth argument into your requests.
 
 
 # Getting data
 
-You can query the API using the list() or get() methods of a ApiResourceAccessor.  An ApiResourceAccessor is created for each endpoint on an instance of a HexoApi.
+Most commonly, you will query the API using the list() or get() methods of a ApiResourceAccessor.  An ApiResourceAccessor is created for each endpoint on an instance of a HexoApi.
 
 Get the current user's info
 
@@ -24,7 +66,7 @@ Get the current user's info
 All the users you can see:
 
     users = api.user.list()
-    print users[0]
+    print users
 
 Passing either keyword arguments or a dictionary to list() sets the GET args of the request.  So any filtering you'd like to apply (that's supported by the API too, of course) can be managed that way.  For instance, of records before a given startTimestamp.
 
@@ -46,18 +88,19 @@ You can get the next page by calling load_next() on the list.
 
     records.load_next()
 
-The next page will be appended to the existing list.  If there is no next page a Index error exception is raised.  You can check if there is a next page by look at the list's `nexturl`.
+The next page will be appended to the existing list.  If there is no next page a StopIteration exception is raised.  If you don't want catch the exception, you can check if there is a next page by look at the list's `nexturl`.
 
     if records.nexturl:
-        records.next()
+        records.load_next()
 
 You may also user get() to fetch a particular resource by either URI or id.
 
     user99 = api.user.get(99)
 
     # or by URI
-    ecgs = api.ecg.list()
-    ecg0_user = api.user.get(ecgs[0].user)
+    user = api.range.get(user99.resource_uri)
+
+But often the library will handle loading objects for you as described in the next section.
 
 
 ## Lazy loading
@@ -73,14 +116,21 @@ Say you have a list of Ranges all from the same user and lazy load an attribute 
     for r in rngs:
         print r.user.first_name
 
-Clearly it shouldn't be necessary to fetch the user 20 times and happily the library is clever enough to avoid that.  Once the user is loaded once, it's added to an object cache and won't be loaded again until the cache expires (1 hour right now)
+Clearly it shouldn't be necessary to fetch the user 20 times and happily the library is clever enough to avoid that.  Once the user is loaded once, it's added to an object cache and won't be loaded again until the cache expires (1 hour right now).  If you want to force the library to skip the object cache, pass `force_refresh=True` in your call:
 
-This has the added benefit of storing every unique API object only once.  So if you loaded that user again and made a change:
+    user = api.user.get(123, force_refresh=True)
+
+To clear out the object cache completely call `clear_object_cache()` on the api object:
+
+    api.clear_object_cache()
+
+
+The object cache has another benefit, it stores every unique API object only once.  So if you loaded that user again and made a change:
 
     user = api.user.get(123)
     user.first_name = "Billy Bob"
 
-Now every instance of that user is updated, eg. each user object on list of Ranges:
+Every instance of that user is updated, eg. each user object on list of Ranges:
 
     print rngs[0].user.first_name # prints "Billy Bob"
 

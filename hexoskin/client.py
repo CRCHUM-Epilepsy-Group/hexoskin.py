@@ -180,7 +180,7 @@ class ApiResourceList(ApiResultList):
             response = self._parent.api.get(self.nexturl)
             self._append_response(response)
         else:
-            raise IndexError('List is already at the end.')
+            raise StopIteration('List is already at the end.')
 
 
     def load_prev(self):
@@ -188,7 +188,7 @@ class ApiResourceList(ApiResultList):
             response = self._parent.api.get(self.prevurl)
             self._append_response(response, prepend=True)
         else:
-            raise IndexError('List is already at the beginning.')
+            raise StopIteration('List is already at the beginning.')
 
 
     def _append_response(self, response, prepend=False):
@@ -344,6 +344,10 @@ class ApiHelper(object):
                 os.remove(self._resource_cache)
                 self.resources = {}
                 self.resource_conf = {}
+
+
+    def clear_object_cache(self):
+        self._object_cache.clear()
 
 
     def build_resources(self):
@@ -701,10 +705,10 @@ class OAuth2Token(object):
 
 class HexoApi(ApiHelper):
 
-    def __init__(self, api_key, api_secret, api_version='', user_auth=None, base_url=None):
+    def __init__(self, api_key, api_secret, api_version='', auth=None, base_url=None):
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(api_key, api_secret, api_version, user_auth, base_url)
+        return super(HexoApi, self).__init__(api_key, api_secret, api_version, auth, base_url)
 
 
 
