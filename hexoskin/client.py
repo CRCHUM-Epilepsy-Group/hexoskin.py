@@ -319,7 +319,7 @@ class ApiHelper(object):
         self.api_key = api_key
         self.api_secret = api_secret
         self.api_version = api_version
-        self.auth = self._create_auth(auth)
+        self.auth = self._create_auth(auth, key=api_key, secret=api_secret)
         self.base_url = self._parse_base_url(base_url)
 
         if CACHED_API_RESOURCE_LIST is not None:
@@ -366,31 +366,35 @@ class ApiHelper(object):
             self._fetch_resource_list()
 
 
-    def _create_auth(self, auth):
+    def _create_auth(self, auth, key=None, secret=None):
         if not auth:
             return None
         elif isinstance(auth, (requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token)):
             return auth
         elif isinstance(auth, basestring):
-            return HexoAuth(*auth.split(':'))
+            return HexoAuth(key, secret, *auth.split(':'))
         elif len(auth) == 2:
-            return HexoAuth(*auth)
+            return HexoAuth(key, secret, *auth)
         else:
             return None
 
 
     def _fetch_resource_list(self):
-        resource_list = self.get('/api/v1/').result
+        resource_list = self.get('/api/').result
         for n,r in resource_list.iteritems():
+            if n == 'import':
+                continue
             self.resource_conf[n] = self.get(r['schema']).result
             self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
             self.resource_conf[n]['name'] = n
+            time.sleep(.3)
 
 
     def _parse_base_url(self, base_url):
         parsed = urlparse(base_url)
         if parsed.netloc:
             return 'https://' + parsed.netloc
+            # return 'http://' + parsed.netloc
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
 
