@@ -1,4 +1,5 @@
-
+class ApiError(Exception):
+    pass
 
 class MethodNotAllowed(Exception):
     pass
