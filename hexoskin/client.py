@@ -1,5 +1,5 @@
-import binascii, base64, pickle, csv, hashlib, hmac, json, os, random, re,\
-        requests, struct, time, urllib
+import binascii, base64, csv, datetime, hashlib, hmac, json, os, pickle, \
+        random, re, requests, struct, time, urllib
 from collections import deque
 from hashlib import sha1
 from urllib.parse import parse_qsl, urlparse
@@ -366,11 +366,22 @@ class ApiHelper(object):
 
     def convert_instances(self, value_dict):
         """
-        Converts all ApiResourceInstances into their uri_resource equivilant.
-        Since we don't update child properties, this makes everything work
-        more smoothly when sending data to the API.
+        Converts object arguments to string values that will work in the
+        querystring. Since we don't update child properties, this makes
+        everything work more smoothly when sending data to the API.
         """
-        return {k: v.resource_uri if k in self.resources and type(v) is ApiResourceInstance else v for k,v in value_dict.items()}
+        return {k: self._inst_arg_repr(k, v) for k,v in value_dict.items()}
+
+    def _inst_arg_repr(self, k, v):
+        """
+        Converts all ApiResourceInstances into their uri_resource equivilant
+        and dates to hxtimestamps.
+        """
+        if k in self.resources and type(v) is ApiResourceInstance:
+            return v.resource_uri
+        elif isinstance(v, datetime.datetime):
+            return int(time.mktime(v.timetuple())) * 256
+        return v
 
     def _request(self, path, method, data=None, params=None, auth=None, headers=None):
         auth = self._create_auth(auth) if auth else self.auth

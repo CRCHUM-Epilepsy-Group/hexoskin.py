@@ -118,5 +118,5 @@ def download_raw(**kwargs):
     fname = '{}.{}'.format('_'.join('{}_{}'.format(k,v) for k,v in kwargs.items()), fmt)
     api.oauth2_get_access_token(*conf['auth'].split(':', 1))
     with open(fname, 'wb') as f:
-        f.write(api.data.list(kwargs, 'application/x-edf'))
+        f.write(api.data.list(kwargs, mimetype))
     print "File written as {}".format(fname)
