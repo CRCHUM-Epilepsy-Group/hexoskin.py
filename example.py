@@ -1,4 +1,6 @@
 #!/usr/bin/python
+import urllib3
+urllib3.disable_warnings()
 
 import hexoskin.client
 import hexoskin.errors
@@ -6,16 +8,24 @@ import hexoskin.errors
 # Example of setting a new cache file.
 # hexoskin.client.CACHED_API_RESOURCE_LIST = '.new_file'
 
-# Initialize the API object.
-conf = {
-    # 'api_key': '[your key]',
-    # 'api_secret': '[your secret]',
-    # 'user_auth': 'user@example.com:passwd',
-    'api_key': 'aBt99STtaKaZbxkdc4gyB5vleepApA',
-    'api_secret': 'z3SRgJPaaCSwTfhRxZDbDRoJ78kzyN',
-    'auth': 'rob.linton@carretechnologies.com:asdfasdf',
-    # 'api_version': 'latest',
-}
+# You may create a .hxauth file with name=value pairs, one per line, which
+# will populate the auth config.  Or you may put default values here if you
+# prefer not to create a .hxauth file.
+try:
+    with open('.hxauth', 'r') as f:
+        conf = dict(map(str.strip, l.split('=', 1)) for l in f.readlines() if l and not l.startswith('#'))
+except FileNotFoundError:
+    conf = {
+        'api_key': 'your key',
+        'api_secret': 'your secret',
+        'auth': 'user@example.com:passwd',
+        # 'api_version': 'latest',
+    }
+except:
+    print('Unable to parse .hxauth file!  Please verify that the syntax is correct.')
+    sys.exit(1)
+
+
 api = hexoskin.client.HexoApi(**conf)
 
 
@@ -24,18 +34,18 @@ def basic_test():
     try:
         # Get the current user's info
         user = api.account.list()[0]
-        print user
+        print(user)
 
         # # All the users you can see:
         users = api.user.list()
-        print users[0]
+        print(users[0])
 
         # Get a list of resources, datatype for instance.
         datatypes = api.datatype.list()
 
         # `datatypes` is a ApiResourceList of ApiResourceInstances.  You can
         # `access it like a list:
-        print datatypes[0]
+        print(datatypes[0])
 
         # You can get the next page.  Now datatypes is 40 items long.
         datatypes.load_next()
@@ -44,8 +54,8 @@ def basic_test():
         # the API except it's not allowed.
         try:
             del datatypes[5]
-        except hexoskin.errors.MethodNotAllowed, e:
-            print "Oh no you di'nt! %s" % e
+        except hexoskin.errors.MethodNotAllowed as e:
+            print("Oh no you di'nt! %s" % e)
 
         # You can create items, a Range for instance:
         new_range = api.range.create({'name':'testnew_range', 'start':353163129199, 'end':353163139199, 'user':user.resource_uri})
@@ -55,27 +65,27 @@ def basic_test():
 
         # And update the server:
         new_range.update()
-        print new_range
+        print(new_range)
 
         # Or by passing a dictionary to update(), note how I can use an
         # ApiResourceInstance as a value here.  That works with the assignment
         # method above too:
         new_range.update({'user': users[0]})
-        print new_range
+        print(new_range)
 
         # And of course, delete it:
         new_range.delete()
 
-    except hexoskin.errors.HttpError, e:
+    except hexoskin.errors.HttpError as e:
         # All HttpErrors have an ApiResponse object in `response`.  The string
         # representation includes the body so can be quite large but it is often
         # useful.
-        print e.response
+        print(e.response)
 
-    except hexoskin.errors.MethodNotAllowed, e:
+    except hexoskin.errors.MethodNotAllowed as e:
         # Requests are verified client-side before being sent.  If you try to use
         # a method that's not allowed, a MethodNotAllowed exception is raised.
-        print "You can't do that! %s" % e
+        print("You can't do that! %s" % e)
 
 
 class DataPoller(object):
@@ -119,4 +129,4 @@ def download_raw(**kwargs):
     api.oauth2_get_access_token(*conf['auth'].split(':', 1))
     with open(fname, 'wb') as f:
         f.write(api.data.list(kwargs, mimetype))
-    print "File written as {}".format(fname)
+    print("File written as {}".format(fname))
