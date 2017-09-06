@@ -1,8 +1,11 @@
 import binascii, base64, csv, datetime, hashlib, hmac, json, os, pickle, \
-        random, re, requests, struct, time, urllib
+        random, re, requests, struct, sys, time, urllib
 from collections import deque
+try:
+    from urllib.parse import parse_qsl, urlparse
+except ImportError:
+    from urlparse import parse_qsl, urlparse
 from hashlib import sha1
-from urllib.parse import parse_qsl, urlparse
 from hexoskin.errors import *
 
 
@@ -67,8 +70,9 @@ class ApiResourceAccessor(object):
                 else:
                     return ApiDataList(response, self)
             else:
-                # Lame detection of list results...
-                if response.result.get('meta', {}).keys() > {'limit', 'next', 'previous'}:
+                # Lame detection of list results...  The set() is unnecessary
+                # in python3, but needed in python2.
+                if set(response.result.get('meta', {}).keys()) > {'limit', 'next', 'previous'}:
                     return ApiResourceList(response, self)
                 else:
                     return self.api._object_cache.set(ApiResourceInstance(response.result, self))
