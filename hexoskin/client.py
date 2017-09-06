@@ -297,7 +297,7 @@ class ApiHelper(object):
         self.base_url = self._parse_base_url(base_url)
 
         if CACHED_API_RESOURCE_LIST is not None:
-            self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s:%s' % (self.base_url, self.api_version)))).rstrip('.')
+            self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s.%s.%s' % (self.base_url, sys.version_info.major, self.api_version)))).rstrip('.')
 
     def __getattr__(self, name):
         if len(self.resources) == 0:
