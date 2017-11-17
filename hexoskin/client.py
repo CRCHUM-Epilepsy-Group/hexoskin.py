@@ -718,7 +718,10 @@ class ApiObjectCache(object):
         return None
 
     def set(self, obj):
-        uri = obj.resource_uri
+        try:
+            uri = obj.resource_uri
+        except AttributeError:
+            return obj
         if uri in self._objects:
             self._objects[uri][1].update_fields(obj.fields)
             return self._objects[uri][1]
