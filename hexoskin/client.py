@@ -400,7 +400,7 @@ class ApiHelper(object):
             req_headers['X-HexoAPIVersion'] = self.api_version
         if headers:
             req_headers.update(headers)
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, verify=False), method)
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
