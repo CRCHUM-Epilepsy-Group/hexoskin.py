@@ -60,7 +60,6 @@ class ApiResourceAccessor(object):
         return self._conf['list_endpoint']
 
     def _build_response(self, response):
-        # import ipdb; ipdb.set_trace()
         ctype = response.content_type
         if ctype == 'application/json':
             is_data, is_flat = self._is_data_response(response)
@@ -92,7 +91,7 @@ class ApiResourceAccessor(object):
     def _is_data_response(self, response):
         # TODO: Replace with a reasonable method of determining the response
         # type.
-        is_data = isinstance(response.result, (list, str, bytes))
+        is_data = isinstance(response.result, (list, basestring))
         is_flat = oauth_parse_qs(response.url).get('flat', False) if is_data else False
         return is_data, is_flat
 
@@ -219,7 +218,7 @@ class ApiResourceInstance(object):
                     if rsrc_type:
                         self.fields[k] = self._parent.api._object_cache.set(ApiResourceInstance(v, rsrc_type))
 
-                elif isinstance(v, (str, bytes)):
+                elif isinstance(v, basestring):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
                     if rsrc_type:
                         # Is there already a cached object?
@@ -235,7 +234,7 @@ class ApiResourceInstance(object):
             if name == 'data':
                 return self._decode_data()
             return self.fields[name]
-        elif self._lazy and 'resource_uri' in self.fields:
+        elif self._lazy and name in self._parent._conf['fields'] and 'resource_uri' in self.fields:
             self._parent.api.resource_from_uri(self.fields['resource_uri'])
             self._lazy = False
             return getattr(self, name)
@@ -344,7 +343,7 @@ class ApiHelper(object):
             return None
         elif isinstance(auth, (requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token)):
             return auth
-        elif isinstance(auth, (str, bytes)):
+        elif isinstance(auth, basestring):
             return HexoAuth(key, secret, *auth.split(':'))
         elif len(auth) == 2:
             return HexoAuth(key, secret, *auth)
@@ -389,7 +388,7 @@ class ApiHelper(object):
 
     def _request(self, path, method, data=None, params=None, auth=None, headers=None):
         auth = self._create_auth(auth) if auth else self.auth
-        if data and not isinstance(data, (str, bytes)):
+        if data and not isinstance(data, basestring):
             data = json.dumps(data)
         if params:
             # Make lists or sets comma-separated strings.
