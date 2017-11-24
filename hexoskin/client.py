@@ -8,6 +8,10 @@ except ImportError:
 from hashlib import sha1
 from hexoskin.errors import *
 
+try:
+    strtypes = (basestring,)
+except NameError:
+    strtypes = (str, bytes)
 
 CACHED_API_RESOURCE_LIST = '.api_stash'
 DEFAULT_CONTENT_TYPE = 'application/json'
@@ -91,7 +95,7 @@ class ApiResourceAccessor(object):
     def _is_data_response(self, response):
         # TODO: Replace with a reasonable method of determining the response
         # type.
-        is_data = isinstance(response.result, (list, basestring))
+        is_data = isinstance(response.result, (list,) + strtypes)
         is_flat = oauth_parse_qs(response.url).get('flat', False) if is_data else False
         return is_data, is_flat
 
@@ -218,7 +222,7 @@ class ApiResourceInstance(object):
                     if rsrc_type:
                         self.fields[k] = self._parent.api._object_cache.set(ApiResourceInstance(v, rsrc_type))
 
-                elif isinstance(v, basestring):
+                elif isinstance(v, strtypes):
                     rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
                     if rsrc_type:
                         # Is there already a cached object?
@@ -343,7 +347,7 @@ class ApiHelper(object):
             return None
         elif isinstance(auth, (requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token)):
             return auth
-        elif isinstance(auth, basestring):
+        elif isinstance(auth, strtypes):
             return HexoAuth(key, secret, *auth.split(':'))
         elif len(auth) == 2:
             return HexoAuth(key, secret, *auth)
@@ -388,7 +392,7 @@ class ApiHelper(object):
 
     def _request(self, path, method, data=None, params=None, auth=None, headers=None):
         auth = self._create_auth(auth) if auth else self.auth
-        if data and not isinstance(data, basestring):
+        if data and not isinstance(data, strtypes):
             data = json.dumps(data)
         if params:
             # Make lists or sets comma-separated strings.
