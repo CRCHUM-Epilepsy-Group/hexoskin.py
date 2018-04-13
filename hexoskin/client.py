@@ -19,6 +19,7 @@ except NameError:
 CACHED_API_RESOURCE_LIST = '.api_stash'
 DEFAULT_CONTENT_TYPE = 'application/json'
 
+
 class ApiResourceAccessor(object):
 
     def __init__(self, name, conf, api):
@@ -392,10 +393,8 @@ class ApiHelper(object):
             return int(time.mktime(v.timetuple())) * 256
         return v
 
-    def _request(self, path, method, data=None, params=None, auth=None, headers=None):
+    def _request(self, path, method, data=None, params=None, auth=None, headers=None, **kwargs):
         auth = self._create_auth(auth) if auth else self.auth
-        if data and not isinstance(data, strtypes):
-            data = json.dumps(data)
         if params:
             # Make lists or sets comma-separated strings.
             params = {k:','.join(str(i) for i in v) if isinstance(v, (tuple, list)) else v for k,v in params.items()}
@@ -405,25 +404,27 @@ class ApiHelper(object):
             req_headers['X-HexoAPIVersion'] = self.api_version
         if headers:
             req_headers.update(headers)
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth), method)
+        if data and not isinstance(data, strtypes) and req_headers['Content-type'] == 'application/json':
+            data = json.dumps(data)
+        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, **kwargs), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
 
-    def post(self, path, data=None, auth=None, headers=None):
-        return self._request(path, 'post', data, auth=auth, headers=headers)
+    def post(self, path, data=None, auth=None, headers=None, **kwargs):
+        return self._request(path, 'post', data, auth=auth, headers=headers, **kwargs)
 
-    def get(self, path, data=None, auth=None, headers=None):
-        return self._request(path, 'get', params=data, auth=auth, headers=headers)
+    def get(self, path, data=None, auth=None, headers=None, **kwargs):
+        return self._request(path, 'get', params=data, auth=auth, headers=headers, **kwargs)
 
-    def put(self, path, data=None, auth=None, headers=None):
-        return self._request(path, 'put', data, auth=auth, headers=headers)
+    def put(self, path, data=None, auth=None, headers=None, **kwargs):
+        return self._request(path, 'put', data, auth=auth, headers=headers, **kwargs)
 
-    def patch(self, path, data=None, auth=None, headers=None):
-        return self._request(path, 'patch', data, auth=auth, headers=headers)
+    def patch(self, path, data=None, auth=None, headers=None, **kwargs):
+        return self._request(path, 'patch', data, auth=auth, headers=headers, **kwargs)
 
-    def delete(self, path, auth=None, headers=None):
-        return self._request(path, 'delete', auth=auth, headers=headers)
+    def delete(self, path, auth=None, headers=None, **kwargs):
+        return self._request(path, 'delete', auth=auth, headers=headers, **kwargs)
 
     def resource_from_uri(self, path):
         if path:
@@ -475,10 +476,13 @@ class ApiHelper(object):
         return self.auth
 
     def oauth2_get_request_token_url(self, callback_uri, grant_type='authorization_code', scope='readonly'):
-        self.auth = OAuth2Token(self.api_key, self.api_secret)
-        self.auth.callback_uri = callback_uri
-        self.auth.grant_type = grant_type
-        self.auth.scope = scope
+        self.auth = OAuth2Token(**{
+            'key': self.api_key,
+            'secret': self.api_secret,
+            'callback_uri': callback_uri,
+            'grant_type': grant_type,
+            'scope': scope,
+        })
         get_args = {
             'response_type': self.auth.response_type,
             'state': self.auth.generate_state(),
@@ -518,8 +522,23 @@ class ApiHelper(object):
 
     def _fetch_oauth2_access_token(self, **kwargs):
         basicauth = requests.auth.HTTPBasicAuth(self.api_key, self.api_secret)
-        # response = self.post('/api/connect/oauth2/token/', auth=basicauth, data=kwargs)
         response = requests.post('%s/api/connect/oauth2/token/' % self.base_url, data=kwargs, auth=basicauth)
+        if response.status_code >= 400:
+            self._throw_http_exception(response)
+        self.auth.set(**response.json())
+        return self.auth
+
+    def refresh_access_token(self, token=None):
+        """Refreshes the current OAuth2Token if possible."""
+        token = token or self.auth
+        data = {
+            'grant_type': 'refresh_token',
+            'refresh_token': token.refresh_token if isinstance(token, OAuth2Token) else token,
+        }
+        if not data['refresh_token']:
+            raise ValueError('Unable to find a refresh token.  Have you loaded an OAuth2 token yet?')
+        basicauth = requests.auth.HTTPBasicAuth(self.api_key, self.api_secret)
+        response = requests.post('%s/api/connect/oauth2/token/' % self.base_url, data=data, auth=basicauth)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         self.auth.set(**response.json())
@@ -633,10 +652,10 @@ class OAuth2Token(object):
         'token_type',
     )
 
-
-    def __init__(self, key, secret, **kwargs):
+    def __init__(self, key=None, secret=None, **kwargs):
         self.key = key
         self.secret = secret
+        self.set(**kwargs)
 
     def __call__(self, request):
         request.headers['Authorization'] = 'Bearer %s' % self.access_token
