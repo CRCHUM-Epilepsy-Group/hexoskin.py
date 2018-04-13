@@ -26,6 +26,11 @@ except:
     sys.exit(1)
 
 
+# Override input in Python 2.
+try: input = raw_input
+except: pass
+
+
 api = hexoskin.client.HexoApi(**conf)
 
 
@@ -130,3 +135,11 @@ def download_raw(**kwargs):
     with open(fname, 'wb') as f:
         f.write(api.data.list(kwargs, mimetype))
     print("File written as {}".format(fname))
+
+
+def oauth2_authorization_code(redirect_uri='https://www.example.com/'):
+    auth_url = api.oauth2_get_request_token_url(redirect_uri)
+    token_url = input('Go to:\n\n{}\n\nPaste the resulting redirect URL here:'.format(auth_url))
+    if token_url:
+        api.oauth2_get_access_token(token_url)
+        return api.account.list()
