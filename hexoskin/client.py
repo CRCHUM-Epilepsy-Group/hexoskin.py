@@ -2,11 +2,14 @@ import binascii, base64, csv, datetime, hashlib, hmac, json, os, pickle, \
         random, re, requests, struct, sys, time, urllib
 from collections import deque
 try:
-    from urllib.parse import parse_qsl, urlparse
+    from urllib.parse import parse_qsl, urlparse, quote
 except ImportError:
+    # Python 2
     from urlparse import parse_qsl, urlparse
+    from urllib import quote
 from hashlib import sha1
 from hexoskin.errors import *
+
 
 try:
     strtypes = (basestring,)
@@ -752,4 +755,4 @@ def oauth_parse_qs(url, fragment=False):
     return dict(parse_qsl(bits.fragment if fragment else bits.query or bits.path))
 
 def oauth_encode(val):
-    return urllib.quote(val, '-._~')
+    return quote(val, '-._~')
