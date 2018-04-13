@@ -370,8 +370,7 @@ class ApiHelper(object):
     def _parse_base_url(self, base_url):
         parsed = urlparse(base_url)
         if parsed.netloc:
-            return 'https://' + parsed.netloc
-            # return 'http://' + parsed.netloc
+            return parsed.geturl()
         raise ValueError('Unable to determine URL from provided base_url arg: %s.', base_url)
 
     def convert_instances(self, value_dict):
