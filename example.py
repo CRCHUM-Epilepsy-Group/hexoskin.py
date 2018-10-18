@@ -14,7 +14,7 @@ import hexoskin.errors
 try:
     with open('.hxauth', 'r') as f:
         conf = dict(map(str.strip, l.split('=', 1)) for l in f.readlines() if l and not l.startswith('#'))
-except FileNotFoundError:
+except IOError:
     conf = {
         'api_key': 'your key',
         'api_secret': 'your secret',
