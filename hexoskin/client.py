@@ -8,7 +8,8 @@ except ImportError:
     from urlparse import parse_qsl, urlparse
     from urllib import quote
 from hashlib import sha1
-from hexoskin.errors import *
+from .errors import (HttpBadRequest, ApiError, HttpUnauthorized, HttpForbidden, HttpNotFound, HttpMethodNotAllowed,
+                     HttpInternalServerError, HttpNotImplemented, HttpError)
 
 
 try:
