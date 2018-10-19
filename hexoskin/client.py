@@ -295,7 +295,7 @@ class ApiResourceInstance(object):
 
 class ApiHelper(object):
 
-    def __init__(self, api_key=None, api_secret=None, api_version='', auth=None, base_url=None):
+    def __init__(self, api_key=None, api_secret=None, api_version='', auth=None, base_url=None, verify_ssl=True):
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
@@ -307,6 +307,7 @@ class ApiHelper(object):
         self.api_version = api_version
         self.auth = self._create_auth(auth, key=api_key, secret=api_secret)
         self.base_url = self._parse_base_url(base_url)
+        self.verify_ssl = verify_ssl
 
         if CACHED_API_RESOURCE_LIST is not None:
             self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s.%s.%s' % (self.base_url, sys.version_info.major, self.api_version)))).rstrip('.')
@@ -407,6 +408,7 @@ class ApiHelper(object):
             req_headers.update(headers)
         if data and not isinstance(data, strtypes) and req_headers['Content-type'] == 'application/json':
             data = json.dumps(data)
+        kwargs.setdefault('verify', self.verify_ssl)
         response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, **kwargs), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
@@ -687,10 +689,10 @@ class OAuth2Token(object):
 
 class HexoApi(ApiHelper):
 
-    def __init__(self, api_key, api_secret, api_version='', auth=None, base_url=None):
+    def __init__(self, api_key, api_secret, api_version='', auth=None, base_url=None, verify_ssl=True):
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(api_key, api_secret, api_version, auth, base_url)
+        return super(HexoApi, self).__init__(api_key, api_secret, api_version, auth, base_url, verify_ssl=verify_ssl)
 
 
 class ApiResponse(object):
