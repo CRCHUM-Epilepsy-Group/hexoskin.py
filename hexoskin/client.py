@@ -1,21 +1,32 @@
-import binascii, base64, csv, datetime, hashlib, hmac, json, os, pickle, \
-        random, re, requests, struct, sys, time, urllib
+import binascii
+import base64
+import csv
+import datetime
+import hashlib
+import hmac
+import json
+import os
+import pickle
+import random
+import re
+import requests
+import struct
+import sys
+import time
 from collections import deque
-try:
+
+if sys.version_info[0] >= 3:
+
     from urllib.parse import parse_qsl, urlparse, quote
-except ImportError:
-    # Python 2
+    strtypes = (str, bytes)
+else:
     from urlparse import parse_qsl, urlparse
     from urllib import quote
+    strtypes = (basestring,)
+
 from hashlib import sha1
 from .errors import (HttpBadRequest, ApiError, HttpUnauthorized, HttpForbidden, HttpNotFound, HttpMethodNotAllowed,
                      HttpInternalServerError, HttpNotImplemented, HttpError)
-
-
-try:
-    strtypes = (basestring,)
-except NameError:
-    strtypes = (str, bytes)
 
 CACHED_API_RESOURCE_LIST = '.api_stash'
 DEFAULT_CONTENT_TYPE = 'application/json'
@@ -38,7 +49,7 @@ class ApiResourceAccessor(object):
 
     def patch(self, new_objects, auth=None, *args, **kwargs):
         self._verify_call('list', 'patch')
-        return self.api.patch(self._conf['list_endpoint'], {'objects':new_objects}, auth=auth, *args, **kwargs)
+        return self.api.patch(self._conf['list_endpoint'], {'objects': new_objects}, auth=auth, *args, **kwargs)
 
     def get(self, uri, format=None, auth=None, force_refresh=False):
         self._verify_call('detail', 'get')
@@ -61,8 +72,9 @@ class ApiResourceAccessor(object):
             return self.api._object_cache.set(ApiResourceInstance(response.result, self))
         else:
             uri = response.headers['Location']
-            rsrc_type,id = self.api.resource_and_id_from_uri(uri)
-            return self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, self, lazy=True))
+            rsrc_type, id = self.api.resource_and_id_from_uri(uri)
+            return self._parent.api._object_cache.set(
+                ApiResourceInstance({'resource_uri': v, 'id': id}, self, lazy=True))
 
     @property
     def endpoint(self):
@@ -91,11 +103,12 @@ class ApiResourceAccessor(object):
             return ApiBinaryResult(response, self)
 
     def _hdrs(self, format=None):
-        return {'headers':{'Accept': format}} if format else {}
+        return {'headers': {'Accept': format}} if format else {}
 
     def _verify_call(self, access_type, method):
         if method not in self._conf['allowed_%s_http_methods' % access_type]:
-            raise MethodNotAllowed('%s method is not allowed on a %s %s' % (method, self._conf['name'], access_type))
+            raise HttpMethodNotAllowed(
+                '%s method is not allowed on a %s %s' % (method, self._conf['name'], access_type))
 
     def _is_data_response(self, response):
         # TODO: Replace with a reasonable method of determining the response
@@ -151,7 +164,7 @@ class ApiDataResult(object):
     def __init__(self, row, parent):
         self.record = [ApiResourceInstance(r, parent.api.record) for r in row.get('record', [])]
         self.user = row['user']
-        self.data = {int(d):v for d,v in row['data'].items()}
+        self.data = {int(d): v for d, v in row['data'].items()}
 
 
 class ApiFlatDataList(ApiResultList):
@@ -198,7 +211,8 @@ class ApiResourceList(ApiResultList):
             else:
                 self.extend(self._make_list(response))
         except KeyError as e:
-            raise ApiError('Cannot parse results, unexpected content received! %s \nFirst 64 chars of content: %s' % (e, response.body[:64]))
+            raise ApiError('Cannot parse results, unexpected content received! %s \nFirst 64 chars of content: %s' % (
+                e, response.body[:64]))
 
     def _set_next_prev(self, response):
         self.nexturl = response.result['meta'].get('next', None)
@@ -220,21 +234,23 @@ class ApiResourceInstance(object):
 
     def _link_instances(self):
         # Loop through the fields populating foreign keys.
-        for k,v in self.fields.items():
-            if k in self._parent._conf['fields'] and self._parent._conf['fields'][k].get('related_type', None) == 'to_one':
+        for k, v in self.fields.items():
+            if k in self._parent._conf['fields'] and self._parent._conf['fields'][k].get('related_type',
+                                                                                         None) == 'to_one':
                 if isinstance(v, dict):
-                    rsrc_type,id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
+                    rsrc_type, id = self._parent.api.resource_and_id_from_uri(v.get('resource_uri', ''))
                     if rsrc_type:
                         self.fields[k] = self._parent.api._object_cache.set(ApiResourceInstance(v, rsrc_type))
 
                 elif isinstance(v, strtypes):
-                    rsrc_type,id = self._parent.api.resource_and_id_from_uri(v)
+                    rsrc_type, id = self._parent.api.resource_and_id_from_uri(v)
                     if rsrc_type:
                         # Is there already a cached object?
                         rsrc = self._parent.api._object_cache.get(v)
                         # If not, create a lazy one.
                         if not rsrc:
-                            rsrc = self._parent.api._object_cache.set(ApiResourceInstance({'resource_uri':v, 'id':id}, rsrc_type, lazy=True))
+                            rsrc = self._parent.api._object_cache.set(
+                                ApiResourceInstance({'resource_uri': v, 'id': id}, rsrc_type, lazy=True))
                         self.fields[k] = rsrc
 
     def __getattr__(self, name):
@@ -263,9 +279,10 @@ class ApiResourceInstance(object):
     def update(self, data=None, *args, **kwargs):
         self._parent._verify_call('detail', 'put')
         if data is not None:
-            for k,v in data.items():
+            for k, v in data.items():
                 setattr(self, k, v)
-        response = self._parent.api.put(self.fields['resource_uri'], self._parent.api.convert_instances(self.fields), *args, **kwargs)
+        response = self._parent.api.put(self.fields['resource_uri'], self._parent.api.convert_instances(self.fields),
+                                        *args, **kwargs)
         if response.result:
             self.update_fields(response.result.copy())
         return response
@@ -310,7 +327,8 @@ class ApiHelper(object):
         self.verify_ssl = verify_ssl
 
         if CACHED_API_RESOURCE_LIST is not None:
-            self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s.%s.%s' % (self.base_url, sys.version_info.major, self.api_version)))).rstrip('.')
+            self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s.%s.%s' % (
+                self.base_url, sys.version_info.major, self.api_version)))).rstrip('.')
 
     def __getattr__(self, name):
         if len(self.resources) == 0:
@@ -362,7 +380,7 @@ class ApiHelper(object):
 
     def _fetch_resource_list(self):
         resource_list = self.get('/api/').result
-        for n,r in resource_list.items():
+        for n, r in resource_list.items():
             if n == 'import':
                 continue
             self.resource_conf[n] = self.get(r['schema']).result
@@ -382,7 +400,7 @@ class ApiHelper(object):
         querystring. Since we don't update child properties, this makes
         everything work more smoothly when sending data to the API.
         """
-        return {k: self._inst_arg_repr(k, v) for k,v in value_dict.items()}
+        return {k: self._inst_arg_repr(k, v) for k, v in value_dict.items()}
 
     def _inst_arg_repr(self, k, v):
         """
@@ -399,7 +417,7 @@ class ApiHelper(object):
         auth = self._create_auth(auth) if auth else self.auth
         if params:
             # Make lists or sets comma-separated strings.
-            params = {k:','.join(str(i) for i in v) if isinstance(v, (tuple, list)) else v for k,v in params.items()}
+            params = {k: ','.join(str(i) for i in v) if isinstance(v, (tuple, list)) else v for k, v in params.items()}
         url = self.base_url + path
         req_headers = {'Accept': 'application/json', 'Content-type': 'application/json'}
         if self.api_version:
@@ -409,7 +427,8 @@ class ApiHelper(object):
         if data and not isinstance(data, strtypes) and req_headers['Content-type'] == 'application/json':
             data = json.dumps(data)
         kwargs.setdefault('verify', self.verify_ssl)
-        response = ApiResponse(requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, **kwargs), method)
+        response = ApiResponse(
+            requests.request(method, url, data=data, params=params, headers=req_headers, auth=auth, **kwargs), method)
         if response.status_code >= 400:
             self._throw_http_exception(response)
         return response
@@ -433,14 +452,14 @@ class ApiHelper(object):
         if path:
             if path.startswith(self.base_url):
                 path = path[len(self.base_url):]
-            rsrc_type,id = self.resource_and_id_from_uri(path)
+            rsrc_type, id = self.resource_and_id_from_uri(path)
             if rsrc_type:
                 return rsrc_type.get(path)
         return None
 
     def resource_and_id_from_uri(self, path):
-        base_uri,id = re.match('^(.+?)(\d+)/$', path).groups()
-        for k,r in self.resource_conf.items():
+        base_uri, id = re.match('^(.+?)(\d+)/$', path).groups()
+        for k, r in self.resource_conf.items():
             if r['list_endpoint'] == base_uri:
                 return getattr(self, k), id
         return None, None
@@ -493,7 +512,7 @@ class ApiHelper(object):
             'scope': self.auth.scope,
             'redirect_uri': self.auth.callback_uri,
         }
-        querystr = '&'.join('%s=%s' % (k, oauth_encode(v)) for k,v in get_args.items())
+        querystr = '&'.join('%s=%s' % (k, oauth_encode(v)) for k, v in get_args.items())
         return '%s/api/connect/oauth2/auth/?%s' % (self.base_url, querystr)
 
     def oauth2_get_access_token(self, *args, **kwargs):
@@ -598,11 +617,11 @@ class OAuth1Token(object):
         self.set(**kwargs)
 
     def set(self, **kwargs):
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     def _request_args(self):
-        return dict(filter(lambda kv:kv[1] is not None, [(k, getattr(self, k, None)) for k in self._request_keys]))
+        return dict(filter(lambda kv: kv[1] is not None, [(k, getattr(self, k, None)) for k in self._request_keys]))
 
     def __call__(self, request):
         req_params = oauth_parse_qs(request.url)
@@ -612,15 +631,15 @@ class OAuth1Token(object):
 
         oauth_vars['oauth_consumer_key'] = self.oauth_consumer_key
         oauth_vars['oauth_signature_method'] = 'HMAC-SHA1'
-        oauth_vars['oauth_nonce'] = random.randint(1000000,9999999)
+        oauth_vars['oauth_nonce'] = random.randint(1000000, 9999999)
         oauth_vars['oauth_timestamp'] = int(time.time())
 
-        oauth_vars = {oauth_encode(k): oauth_encode(str(v)) for k,v in oauth_vars.items()}
+        oauth_vars = {oauth_encode(k): oauth_encode(str(v)) for k, v in oauth_vars.items()}
 
         params = oauth_vars.copy()
         params.pop('realms', None)
         params.update(req_params or {})
-        params_str = '&'.join('%s=%s'%(k,v) for k,v in sorted(params.items()))
+        params_str = '&'.join('%s=%s' % (k, v) for k, v in sorted(params.items()))
 
         qpos = request.url.rfind('?')
         uri = request.url[:qpos if qpos > -1 else len(request.url)]
@@ -632,7 +651,7 @@ class OAuth1Token(object):
         # print ' base_str: %s' % base_str
         # print ' sig: %s' % oauth_vars['oauth_signature']
 
-        request.headers['Authorization'] = 'OAuth ' + ','.join('%s="%s"'%(k,v) for k,v in oauth_vars.items())
+        request.headers['Authorization'] = 'OAuth ' + ','.join('%s="%s"' % (k, v) for k, v in oauth_vars.items())
         return request
 
 
@@ -665,11 +684,11 @@ class OAuth2Token(object):
         return request
 
     def generate_state(self):
-        self.state = str(random.randint(1000000,9999999))
+        self.state = str(random.randint(1000000, 9999999))
         return self.state
 
     def set(self, **kwargs):
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     @property
@@ -774,6 +793,7 @@ def oauth_parse_qs(url, fragment=False):
     """
     bits = urlparse(url)
     return dict(parse_qsl(bits.fragment if fragment else bits.query or bits.path))
+
 
 def oauth_encode(val):
     return quote(val, '-._~')
