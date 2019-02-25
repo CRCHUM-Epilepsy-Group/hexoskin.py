@@ -43,58 +43,69 @@ def basic_test():
     """Runs through the some basic API operations."""
     # Get the current user's info
     user = api.account.list()[0]
-    print(user)
+    print("Get current user {}".format(user))
 
     # # All the users you can see:
     users = api.user.list()
-    print(users[0])
+    print("List all users. n= {}".format(len(users)))
 
     # Get a list of resources, datatype for instance.
     datatypes = api.datatype.list()
-
-    # `datatypes` is a ApiResourceList of ApiResourceInstances.  You can
-    # `access it like a list:
-    print(datatypes[0])
+    print("List the first datatypes. n= {}".format(len(datatypes)))
 
     # You can get the next page.  Now datatypes is 40 items long.
     datatypes.load_next()
+    print("List datatypes after loading the second page. n= {}".format(len(datatypes)))
+
+    api.datatype.list(limit=45)
+    print("List datatypes after the n (45) first datatypes. n= {}".format(len(datatypes)))
+
+    # `datatypes` is a ApiResourceList of ApiResourceInstances.  You can
+    # `access it like a list:
+    print('print the first Datatype: {}'.format(datatypes[0]))
+
+
 
     # You can delete right from the list!  This would send a delete request to
     # the API except it's not allowed.
-
+    print('Try to delete a datatype')
     try:
         del datatypes[5]
     except hexoskin.errors.HttpMethodNotAllowed as e:
-        print("range not deleted: {}".format(datatypes[5]))
-
         # All HttpErrors have an ApiResponse object in `response`.  The string
         # representation includes the body so can be quite large but it is often
         # useful.
-        print(e.response)
+        print("Datatype {} not deleted. The log message is ".format(datatypes[5], e.response))
 
 
-
-
-    # You can create items, a Range for instance:
+    # You can create items. Range for instance:
     new_range = api.range.create(
-        {'name': 'testnew_range', 'start': 353163129199, 'end': 353163139199, 'user': user.resource_uri})
-    print(new_range, new_range.name, new_range.user)
+        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139199, 'user': user.resource_uri})
+    print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
 
     # `new_range` is an ApiResourceInstance.  You can modify it in place:
-    new_range.name = 'newtestyrangey'
+    new_range.name = 'Modified range name'
 
     # And update the server:
     new_range.update()
-    print(new_range, new_range.name, new_range.user)
+    print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
+    # And update the server directly in oine line:
+    new_range.update({'name': 'Remodified range name'})
+    print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
 
-    # Or by passing a dictionary to update(), note how I can use an
-    # ApiResourceInstance as a value here.  That works with the assignment
-    # method above too:
-    new_range.update({'user': users[0]})
-    print(new_range, new_range.name, new_range.user)
-
+    at = api.activitytype.list()
     # And of course, delete it:
     new_range.delete()
+
+    # Note how I can use an ApiResourceInstance as a value here:
+    new_range2 = api.range.create(
+        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139199, 'user': user})
+    print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
+    new_range2.delete()
+    print('Result after deleting a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
+
+
+
 
 
 class DataPoller(object):
