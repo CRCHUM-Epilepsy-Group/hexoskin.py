@@ -20,11 +20,11 @@ if sys.version_info[0] < 3:
 # will populate the auth config.
 if not os.path.exists('.hxauth'):
     with open('.hxauth', 'w') as f:
-        str = 'api_key = your_key\n' \
+        str1 = 'api_key = your_key\n' \
               'api_secret = your_secret\n' \
               'auth = user@example.com:passwd\n' \
               'base_url = https://api.hexoskin.com\n'
-        f.write(str)
+        f.write(str1)
 
 try:
     with open('.hxauth', 'r') as f:
