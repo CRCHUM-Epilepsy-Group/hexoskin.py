@@ -179,6 +179,33 @@ class ApiResourceList(ApiResultList):
         super(ApiResourceList, self).__init__(response, parent)
         self._set_next_prev(response)
 
+    def iter_all(self):
+        """
+        Get a list all the elements of a call through a generator
+        The elements are fetched on the api as needed. This is useful to limit memory usage when
+        """
+        i = 0
+        while i < self.response.result['meta']['total_count']:
+            if len(self) == 0:
+                self.load_next()
+            i += 1
+            yield self.popleft()
+
+    def prefetch_all(self):
+        """
+        Get a list all the elements of a query.
+        This call the "next" api address until all the data are downloaded.
+        Note: this will make many fast calls to the api. The api may not allow it.
+        Note: This can create memory issues if more than 1000 values are downloaded. See iter_all
+        """
+
+        while True:
+            try:
+                self.load_next()
+            except StopIteration:
+                break
+        return self
+
     def _make_list(self, response):
         return map(self._make_list_item, response.result['objects'])
 

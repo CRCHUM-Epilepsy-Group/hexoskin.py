@@ -65,7 +65,6 @@ def basic_test():
     print('print the first Datatype: {}'.format(datatypes[0]))
 
 
-
     # You can delete right from the list!  This would send a delete request to
     # the API except it's not allowed.
     print('Try to delete a datatype')
@@ -80,7 +79,7 @@ def basic_test():
 
     # You can create items. Range for instance:
     new_range = api.range.create(
-        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139199, 'user': user.resource_uri})
+        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139198, 'user': user.resource_uri})
     print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
 
     # `new_range` is an ApiResourceInstance.  You can modify it in place:
@@ -99,11 +98,26 @@ def basic_test():
 
     # Note how I can use an ApiResourceInstance as a value here:
     new_range2 = api.range.create(
-        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139199, 'user': user})
+        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139198, 'user': user})
     print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
     new_range2.delete()
     print('Result after deleting a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
 
+
+    # Get a list all the elements of a query.
+    # This call the "next" api address until all the data are downloaded.
+    # Note: this will make many fast calls to the api. The api may not allow it.
+    # Note: This can create memory issues if more than 1000 values are downloaded. See next example
+    datatypes = api.datatype.list().prefetch_all()
+    print('preteched a total of {} datatypes'.format(len(datatypes)))
+
+    # Get a list all the elements of a call through a generator
+    # The elements are fetched on the api as needed. This is useful to limit memory usage when
+    # more than 1000 values are expected.
+    datatypes_ids = []
+    for i, a in enumerate(api.datatype.list().iter_all()):
+        datatypes_ids.append(a.id)
+    print('datatypes ids {}'.format(datatypes_ids))
 
 
 
