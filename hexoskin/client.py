@@ -749,9 +749,10 @@ class ApiResponse(object):
     """
 
     def __init__(self, response, method='GET'):
-        try:
+
+        if response.headers['Content-Type'] == 'application/json':
             self.result = response.json()
-        except:
+        else:
             self.result = response.content
         self.body = response.content
         self.url = response.request.url
