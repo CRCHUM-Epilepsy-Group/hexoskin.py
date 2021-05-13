@@ -750,7 +750,7 @@ class ApiResponse(object):
 
     def __init__(self, response, method='GET'):
 
-        if response.headers['Content-Type'] == 'application/json':
+        if 'application/json' in response.headers['Content-Type'] or 'application_json' in response.headers['Content-Type']:
             self.result = response.json()
         else:
             self.result = response.content
