@@ -410,9 +410,13 @@ class ApiHelper(object):
         for n, r in resource_list.items():
             if n == 'import':
                 continue
-            self.resource_conf[n] = self.get(r['schema']).result
-            self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
-            self.resource_conf[n]['name'] = n
+            try:
+                self.resource_conf[n] = self.get(r['schema']).result
+                self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
+                self.resource_conf[n]['name'] = n
+            except HttpNotFound as e:
+                #Continue if a resource listed in /api/ is unavailable.
+                pass
             time.sleep(.3)
 
     def _parse_base_url(self, base_url):
