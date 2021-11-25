@@ -88,7 +88,7 @@ def basic_test():
     # And update the server:
     new_range.update()
     print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
-    # And update the server directly in oine line:
+    # And update the server directly in one line:
     new_range.update({'name': 'Remodified range name'})
     print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
 
@@ -146,7 +146,7 @@ class DataPoller(object):
         return []
 
 
-def download_raw(**kwargs):
+def download_raw(format='edf', **kwargs):
     """An example of downloading raw data and saving it to disk.
 
     \param kwargs The arguments to determine the data.  Expected to be record=12345 or
@@ -156,10 +156,9 @@ def download_raw(**kwargs):
         'edf': 'application/x-edf',
         'zip': 'application/octet-stream',
     }
-    fmt = kwargs.pop('format', 'edf').lower()
+    fmt = format.lower()
     mimetype = formats[fmt]
     fname = '{}.{}'.format('_'.join('{}_{}'.format(k, v) for k, v in kwargs.items()), fmt)
-    api.oauth2_get_access_token(*conf['auth'].split(':', 1))
     with open(fname, 'wb') as f:
         f.write(api.data.list(kwargs, mimetype))
     print("File written as {}".format(fname))
