@@ -12,28 +12,40 @@ import hexoskin.client
 import hexoskin.errors
 
 
+def basic_login():
+    """basic example to perform login"""
+    # You may create a .hxauth file with name=value pairs, one per line, which
+    # will populate the auth config.
+    if not os.path.exists('.hxauth'):
+        with open('.hxauth', 'w') as f:
+            str1 = 'api_key = your_key\n' \
+                   'api_secret = your_secret\n' \
+                   'auth = user@example.com:passwd\n' \
+                   'base_url = https://api.hexoskin.com\n'
+            f.write(str1)
 
-# You may create a .hxauth file with name=value pairs, one per line, which
-# will populate the auth config.
-if not os.path.exists('.hxauth'):
-    with open('.hxauth', 'w') as f:
-        str1 = 'api_key = your_key\n' \
-              'api_secret = your_secret\n' \
-              'auth = user@example.com:passwd\n' \
-              'base_url = https://api.hexoskin.com\n'
-        f.write(str1)
+    try:
+        with open('.hxauth', 'r') as f:
+            conf = dict(map(str.strip, l.split('=', 1)) for l in f.readlines() if l and not l.startswith('#'))
+    except:
+        raise IOError('Unable to parse .hxauth file!  Please verify that the syntax is correct.')
 
-try:
-    with open('.hxauth', 'r') as f:
-        conf = dict(map(str.strip, l.split('=', 1)) for l in f.readlines() if l and not l.startswith('#'))
-except:
-    raise IOError('Unable to parse .hxauth file!  Please verify that the syntax is correct.')
+    if conf['api_key'] == 'your_key':
+        raise ValueError('Plese fill the file: ".hxauth" with credentials')
 
-if conf['api_key'] == 'your_key':
-    raise ValueError('Plese fill the file: ".hxauth" with credentials')
+    try:
+        # try an oauth2 login
+        auth = conf.pop('auth')
+        username, password = auth.split(':')
+        api = hexoskin.client.HexoApi(**conf)
+        api.oauth2_get_access_token(username, password)
+    except hexoskin.errors.HttpBadRequest as e:
+        # HexoAuth login
+        api = hexoskin.client.HexoApi(auth=auth, **conf)
+    return api
 
 
-api = hexoskin.client.HexoApi(**conf)
+api = basic_login()
 
 
 def basic_test():
@@ -163,15 +175,7 @@ def download_raw(format='edf', **kwargs):
     fname = f'{fname0}.{fmt}'
     with open(fname, 'wb') as f:
         f.write(api.data.list(kwargs, mimetype))
-    print("File written as {}".format(fname))
-
-
-def oauth2_authorization_code(redirect_uri='https://www.example.com/'):
-    auth_url = api.oauth2_get_request_token_url(redirect_uri)
-    token_url = input('Go to:\n\n{}\n\nPaste the resulting redirect URL here:'.format(auth_url))
-    if token_url:
-        api.oauth2_get_access_token(token_url)
-        return api.account.list()
+    print(f"File written as {fname}")
 
 
 if __name__ == '__main__':
