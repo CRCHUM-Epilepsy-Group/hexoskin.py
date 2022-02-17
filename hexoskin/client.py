@@ -1,5 +1,5 @@
-import binascii
 import base64
+import binascii
 import csv
 import datetime
 import hashlib
@@ -9,30 +9,28 @@ import os
 import pickle
 import random
 import re
-import requests
 import struct
 import sys
 import time
 from collections import deque
-
-if sys.version_info[0] >= 3:
-
-    from urllib.parse import parse_qsl, urlparse, quote
-    strtypes = (str, bytes)
-else:
-    from urlparse import parse_qsl, urlparse
-    from urllib import quote
-    strtypes = (basestring,)
-
 from hashlib import sha1
+from urllib.parse import parse_qsl, urlparse, quote
+
+import requests
+
 from .errors import (HttpBadRequest, ApiError, HttpUnauthorized, HttpForbidden, HttpNotFound, HttpMethodNotAllowed,
                      HttpInternalServerError, HttpNotImplemented, HttpError)
 
+strtypes = (str, bytes)
 CACHED_API_RESOURCE_LIST = '.api_stash'
 DEFAULT_CONTENT_TYPE = 'application/json'
 
 
 class ApiResourceAccessor(object):
+    """
+    Accessor to the resource of the api
+    /api/range/, /api/user/ ...
+    """
 
     def __init__(self, name, conf, api):
         self._name = name
@@ -90,15 +88,13 @@ class ApiResourceAccessor(object):
                 else:
                     return ApiDataList(response, self)
             else:
-                # Lame detection of list results...  The set() is unnecessary
-                # in python3, but needed in python2.
-                if set(response.result.get('meta', {}).keys()) > {'limit', 'next', 'previous'}:
+                # Lame detection of list results
+                if response.result.get('meta', {}).keys() > {'limit', 'next', 'previous'}:
                     return ApiResourceList(response, self)
                 else:
                     return self.api._object_cache.set(ApiResourceInstance(response.result, self))
         elif ctype == 'text/csv':
             return ApiCSVResult(response, self)
-        # elif ctype in ('application/octet-stream', 'application/x-edf'):
         else:
             return ApiBinaryResult(response, self)
 
@@ -119,6 +115,9 @@ class ApiResourceAccessor(object):
 
 
 class ApiResult(object):
+    """
+    form an abject from the data returned in an api request response
+    """
 
     def __init__(self, response, parent):
         self._parent = parent
@@ -182,7 +181,7 @@ class ApiResourceList(ApiResultList):
     def iter_all(self):
         """
         Get a list all the elements of a call through a generator
-        The elements are fetched on the api as needed. This is useful to limit memory usage when
+        The elements are fetched on the api as needed. This is useful to limit memory usage
         """
         i = 0
         while i < self.response.result['meta']['total_count']:
@@ -247,6 +246,9 @@ class ApiResourceList(ApiResultList):
 
 
 class ApiResourceInstance(object):
+    """Resource to form and access objects of the api
+    /api/user/10/ , /api/range/12/, ...
+    """
 
     def __init__(self, obj, parent, lazy=False):
         self.__dict__['fields'] = {}
@@ -340,6 +342,15 @@ class ApiResourceInstance(object):
 class ApiHelper(object):
 
     def __init__(self, api_key=None, api_secret=None, api_version='', auth=None, base_url=None, verify_ssl=True):
+        """
+        :param api_key: public key
+        :param api_secret: private key
+        :param api_version:
+        :param auth: HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token, "username:password"
+        :param base_url:
+        :param verify_ssl:
+        """
+
         super(ApiHelper, self).__init__()
         self.resource_conf = {}
         self.resources = {}
@@ -356,6 +367,10 @@ class ApiHelper(object):
         if CACHED_API_RESOURCE_LIST is not None:
             self._resource_cache = ('%s_%s' % (CACHED_API_RESOURCE_LIST, re.sub(r'\W+', '.', '%s.%s.%s' % (
                 self.base_url, sys.version_info.major, self.api_version)))).rstrip('.')
+
+    @property
+    def freq(self):
+        return 256 if '/api.hexoskin.com' in self.base_url else 1000
 
     def __getattr__(self, name):
         if len(self.resources) == 0:
@@ -394,6 +409,15 @@ class ApiHelper(object):
             self._fetch_resource_list()
 
     def _create_auth(self, auth, key=None, secret=None):
+        """
+        Args:
+            auth ():requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token, 'username:password'
+            key (): public key
+            secret (): private key
+        Returns:
+            auth object
+        """
+
         if not auth:
             return None
         elif isinstance(auth, (requests.auth.HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token)):
@@ -415,7 +439,7 @@ class ApiHelper(object):
                 self.resource_conf[n]['list_endpoint'] = r['list_endpoint']
                 self.resource_conf[n]['name'] = n
             except HttpNotFound as e:
-                #Continue if a resource listed in /api/ is unavailable.
+                # Continue if a resource listed in /api/ is unavailable.
                 pass
             time.sleep(.3)
 
@@ -551,6 +575,7 @@ class ApiHelper(object):
         Gets the access token from the URL returned by an oauth2 user
         authentication or from a user/pass combination for a password
         grant_type client.
+        :args  url  or (username, password)
         """
         if len(args) == 1:
             url = args[0]
@@ -604,6 +629,13 @@ class HexoAuth(requests.auth.HTTPBasicAuth):
     """
 
     def __init__(self, api_key, api_secret, auth, password=None):
+        """
+        Args:
+            api_key (): public key
+            api_secret (): private key
+            auth (): "username:password"  or "username"
+            password ():
+        """
         self.auth = auth
         self.api_key = api_key
         self.api_secret = api_secret
@@ -620,7 +652,6 @@ class HexoAuth(requests.auth.HTTPBasicAuth):
         request.headers['X-HEXOTIMESTAMP'] = ts
         request.headers['X-HEXOAPIKEY'] = self.api_key
         request.headers['X-HEXOAPISIGNATURE'] = digest
-        # print '(%s, %s, %s) = %s' % (self.api_secret, ts, request.url, digest)
         return request
 
 
@@ -664,7 +695,6 @@ class OAuth1Token(object):
         oauth_vars['oauth_signature_method'] = 'HMAC-SHA1'
         oauth_vars['oauth_nonce'] = random.randint(1000000, 9999999)
         oauth_vars['oauth_timestamp'] = int(time.time())
-
         oauth_vars = {oauth_encode(k): oauth_encode(str(v)) for k, v in oauth_vars.items()}
 
         params = oauth_vars.copy()
@@ -677,11 +707,6 @@ class OAuth1Token(object):
         base_str = '&'.join(oauth_encode(i) for i in [request.method.upper(), uri, params_str])
 
         oauth_vars['oauth_signature'] = oauth_encode(binascii.b2a_base64(hmac.new(key, base_str, sha1).digest())[:-1])
-        # print ' key: %s' % key
-        # print ' params: %s' % params
-        # print ' base_str: %s' % base_str
-        # print ' sig: %s' % oauth_vars['oauth_signature']
-
         request.headers['Authorization'] = 'OAuth ' + ','.join('%s="%s"' % (k, v) for k, v in oauth_vars.items())
         return request
 
@@ -740,9 +765,17 @@ class OAuth2Token(object):
 class HexoApi(ApiHelper):
 
     def __init__(self, api_key, api_secret, api_version='', auth=None, base_url=None, verify_ssl=True):
+        """
+        :param api_key: public key
+        :param api_secret: private key
+        :param api_version: DEPRECATED
+        :param auth: HTTPBasicAuth, HexoAuth, OAuth1Token, OAuth2Token, 'username:password"
+        :param base_url:
+        :param verify_ssl:
+        """
         if base_url is None:
             base_url = 'https://api.hexoskin.com'
-        return super(HexoApi, self).__init__(api_key, api_secret, api_version, auth, base_url, verify_ssl=verify_ssl)
+        return super(HexoApi, self).__init__(api_key, api_secret, api_version, auth, base_url, verify_ssl)
 
 
 class ApiResponse(object):
@@ -754,7 +787,8 @@ class ApiResponse(object):
 
     def __init__(self, response, method='GET'):
 
-        if 'application/json' in response.headers['Content-Type'] or 'application_json' in response.headers['Content-Type']:
+        if 'application/json' in response.headers['Content-Type'] or 'application_json' in response.headers[
+            'Content-Type']:
             self.result = response.json()
         else:
             self.result = response.content

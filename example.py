@@ -1,20 +1,17 @@
 #!/usr/bin/python
-import urllib3
-import sys
-import time
 import datetime
 import os
+import sys
+import time
+
+import urllib3
+
 urllib3.disable_warnings()
 
 import hexoskin.client
 import hexoskin.errors
 
-if sys.version_info[0] < 3:
-    input = raw_input
 
-
-# Example of setting a new cache file.
-# hexoskin.client.CACHED_API_RESOURCE_LIST = '.new_file'
 
 # You may create a .hxauth file with name=value pairs, one per line, which
 # will populate the auth config.
@@ -43,27 +40,26 @@ def basic_test():
     """Runs through the some basic API operations."""
     # Get the current user's info
     user = api.account.list()[0]
-    print("Get current user {}".format(user))
+    print("Get current user {user}")
 
     # # All the users you can see:
     users = api.user.list()
-    print("List all users. n= {}".format(len(users)))
+    print(f"List all users. n= {len(users)}")
 
     # Get a list of resources, datatype for instance.
     datatypes = api.datatype.list()
-    print("List the first datatypes. n= {}".format(len(datatypes)))
+    print(f"List the first datatypes. n= {len(datatypes)}")
 
     # You can get the next page.  Now datatypes is 40 items long.
     datatypes.load_next()
-    print("List datatypes after loading the second page. n= {}".format(len(datatypes)))
+    print(f"List datatypes after loading the second page. n= {len(datatypes)}")
 
     api.datatype.list(limit=45)
-    print("List datatypes after the n (45) first datatypes. n= {}".format(len(datatypes)))
+    print(f"List datatypes after the n (45) first datatypes. n= {len(datatypes)}")
 
     # `datatypes` is a ApiResourceList of ApiResourceInstances.  You can
     # `access it like a list:
-    print('print the first Datatype: {}'.format(datatypes[0]))
-
+    print(f'print the first Datatype: {datatypes[0]}')
 
     # You can delete right from the list!  This would send a delete request to
     # the API except it's not allowed.
@@ -74,23 +70,27 @@ def basic_test():
         # All HttpErrors have an ApiResponse object in `response`.  The string
         # representation includes the body so can be quite large but it is often
         # useful.
-        print("Datatype {} not deleted. The log message is ".format(datatypes[5], e.response))
-
+        print(f"Datatype {datatypes[5]} not deleted. The log message is {e.response}")
 
     # You can create items. Range for instance:
+
+    start = datetime.datetime.now().timestamp()*api.freq
     new_range = api.range.create(
-        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139198, 'user': user.resource_uri})
-    print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
+        {'name': 'Original_range', 'start':start, 'end': start+5000, 'user': user.resource_uri})
+    print(f'Result after creating a range: \n  range_info: {new_range}   range_name: {new_range.name}  '
+          f' range_user: {new_range.user}')
 
     # `new_range` is an ApiResourceInstance.  You can modify it in place:
     new_range.name = 'Modified range name'
 
     # And update the server:
     new_range.update()
-    print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
+    print(f'Result after modyfying a range: \n  range_info: {new_range}   range_name: {new_range.name} '
+          f'  range_user: {new_range.user}')
     # And update the server directly in one line:
     new_range.update({'name': 'Remodified range name'})
-    print('Result after modyfying a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range, new_range.name, new_range.user))
+    print(f'Result after modyfying a range: \n  range_info: {new_range}   range_name: {new_range.name}  '
+          f' range_user: {new_range.user}')
 
     at = api.activitytype.list()
     # And of course, delete it:
@@ -98,18 +98,19 @@ def basic_test():
 
     # Note how I can use an ApiResourceInstance as a value here:
     new_range2 = api.range.create(
-        {'name': 'Original_range', 'start': 353163129199, 'end': 353163139198, 'user': user})
-    print('Result after creating a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
+        {'name': 'Original_range', 'start': start, 'end': start+5000, 'user': user})
+    print(f'Result after creating a range: \n  range_info: {new_range2}   range_name: {new_range2.name}  '
+          f' range_user: {new_range2.user}')
     new_range2.delete()
-    print('Result after deleting a range: \n  range_info: {}   range_name: {}   range_user: {}'.format(new_range2, new_range2.name, new_range2.user))
-
+    print(f'Result after deleting a range: \n  range_info: {new_range2}   range_name: {new_range2.name} '
+          f'  range_user: {new_range2.user}')
 
     # Get a list all the elements of a query.
     # This call the "next" api address until all the data are downloaded.
     # Note: this will make many fast calls to the api. The api may not allow it.
     # Note: This can create memory issues if more than 1000 values are downloaded. See next example
     datatypes = api.datatype.list().prefetch_all()
-    print('preteched a total of {} datatypes'.format(len(datatypes)))
+    print(f'preteched a total of {len(datatypes)} datatypes')
 
     # Get a list all the elements of a call through a generator
     # The elements are fetched on the api as needed. This is useful to limit memory usage when
@@ -117,9 +118,7 @@ def basic_test():
     datatypes_ids = []
     for i, a in enumerate(api.datatype.list().iter_all()):
         datatypes_ids.append(a.id)
-    print('datatypes ids {}'.format(datatypes_ids))
-
-
+    print(f'datatypes ids {datatypes_ids}')
 
 
 class DataPoller(object):
@@ -147,9 +146,11 @@ class DataPoller(object):
 
 
 def download_raw(format='edf', **kwargs):
-    """An example of downloading raw data and saving it to disk.
-
-    \param kwargs The arguments to determine the data.  Expected to be record=12345 or
+    """
+    An example of downloading raw data and saving it to disk.
+    Args:
+        format (): "edf"  or "zip"
+        **kwargs (): The arguments to determine the data.  Expected to be record=12345 or
         range=12345 for sane filenames.
     """
     formats = {
@@ -158,7 +159,8 @@ def download_raw(format='edf', **kwargs):
     }
     fmt = format.lower()
     mimetype = formats[fmt]
-    fname = '{}.{}'.format('_'.join('{}_{}'.format(k, v) for k, v in kwargs.items()), fmt)
+    fname0 = '_'.join(f'{k}_{v}' for k, v in kwargs.items())
+    fname = f'{fname0}.{fmt}'
     with open(fname, 'wb') as f:
         f.write(api.data.list(kwargs, mimetype))
     print("File written as {}".format(fname))
