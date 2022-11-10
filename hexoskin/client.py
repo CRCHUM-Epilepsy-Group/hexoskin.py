@@ -128,7 +128,11 @@ class ApiCSVResult(ApiResult, list):
 
     def __init__(self, response, parent):
         super(ApiCSVResult, self).__init__(response, parent)
-        self.csv = csv.reader(response.result.splitlines())
+        if isinstance(response.result, bytes):
+            self.csv = csv.reader(response.result.decode().splitlines())
+        else:
+            self.csv = csv.reader(response.result.splitlines())
+
         list.__init__(self, self.csv)
 
 

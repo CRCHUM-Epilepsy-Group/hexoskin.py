@@ -168,14 +168,21 @@ def download_raw(format='edf', **kwargs):
     formats = {
         'edf': 'application/x-edf',
         'zip': 'application/octet-stream',
+        'csv': 'text/csv'
     }
     fmt = format.lower()
     mimetype = formats[fmt]
     fname0 = '_'.join(f'{k}_{v}' for k, v in kwargs.items())
     fname = f'{fname0}.{fmt}'
-    with open(fname, 'wb') as f:
-        f.write(api.data.list(kwargs, mimetype))
-    print(f"File written as {fname}")
+    if fmt == 'csv':
+        data= api.data.list(kwargs, mimetype)
+        with open(fname,  'w') as f:
+            for line in data:
+                f.write(','.join(line)+'\n')
+    else:
+        with open(fname,  'wb') as f:
+            f.write(api.data.list(kwargs, mimetype))
+    print("File written as {}".format(fname))
 
 
 if __name__ == '__main__':
