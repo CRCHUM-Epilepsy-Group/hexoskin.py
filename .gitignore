@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 .*hxauth*
+hxauth.py
+.api_stash_https.api.hexoskin.com.3

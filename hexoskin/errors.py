@@ -6,6 +6,10 @@ class MethodNotAllowed(Exception):
     pass
 
 
+class NoAuthentificationMethod(Exception):
+    pass
+
+
 class HttpError(Exception):
     def __init__(self, response=None):
         if response is not None:
@@ -14,7 +18,7 @@ class HttpError(Exception):
     def __str__(self):
         try:
             return str(self.response.json()["errors"])
-        except:
+        except Exception:
             return super(HttpError, self).__str__()
 
 
