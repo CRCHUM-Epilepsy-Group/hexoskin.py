@@ -21,12 +21,9 @@ def basic_login():
         # try an oauth2 login
         api = hexoskin.client.HexoApi(**conf, verify_ssl=False)
         api.oauth2_get_access_token(username, password)
-        print("oauth2 login")
-    except hexoskin.errors.HttpBadRequest as e:
-        print(e)
+    except hexoskin.errors.HttpBadRequest:
         # HexoAuth login
         api = hexoskin.client.HexoApi(**conf, verify_ssl=False)
-        print("hexoapi login")
     return api
 
 
@@ -85,7 +82,7 @@ def basic_test():
         }
     )
     print(
-        f"Result after creating a range: \n"
+        f"Result after creating a range:\n"
         f"  range_info: {new_range}\n"
         f"  range_name: {new_range.name}\n"
         f"  range_user: {new_range.user}"
@@ -97,7 +94,7 @@ def basic_test():
     # And update the server:
     new_range.update()
     print(
-        "Result after modyfying a range: \n"
+        "Result after modyfying a range:\n"
         f"  range_info: {new_range}\n"
         f"  range_name: {new_range.name}\n"
         f"  range_user: {new_range.user}"
@@ -105,7 +102,7 @@ def basic_test():
     # And update the server directly in one line:
     new_range.update({"name": "Remodified range name"})
     print(
-        "Result after modyfying a range: \n"
+        "Result after modyfying a range:\n"
         f"  range_info: {new_range}\n"
         f"  range_name: {new_range.name}\n"
         f"  range_user: {new_range.user}"
@@ -119,17 +116,17 @@ def basic_test():
         {"name": "Original_range", "start": start, "end": start + 5000, "user": user}
     )
     print(
-        "Result after creating a range: \n"
+        "Result after creating a range:\n"
         f"  range_info: {new_range2}\n"
         f"  range_name: {new_range2.name}\n"
         f"  range_user: {new_range2.user}"
     )
     new_range2.delete()
     print(
-        "Result after deleting a range: \n",
+        "Result after deleting a range:\n"
         f"  range_info: {new_range2}\n"
         f"  range_name: {new_range2.name}\n"
-        f"  range_user: {new_range2.user}",
+        f"  range_user: {new_range2.user}"
     )
 
     # Get a list all the elements of a query.
@@ -202,7 +199,4 @@ def download_raw(fmt="edf", **kwargs):
 
 
 if __name__ == "__main__":
-    records = API.record.list()
-    for file in records:
-        download_raw(fmt="zip", record=file.id)
-        break
+    basic_test()

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import binascii
 import csv
@@ -14,29 +16,30 @@ import sys
 import time
 from collections import deque
 from hashlib import sha1
-from urllib.parse import parse_qsl, urlparse, quote
+from urllib.parse import parse_qsl, quote, urlparse
+from typing import Any
 
 import requests
 from requests.auth import HTTPBasicAuth
 
 from .errors import (
-    NoAuthentificationMethod,
-    HttpBadRequest,
     ApiError,
-    HttpUnauthorized,
-    HttpForbidden,
-    HttpNotFound,
-    HttpMethodNotAllowed,
-    HttpInternalServerError,
-    HttpNotImplemented,
+    HttpBadRequest,
     HttpError,
+    HttpForbidden,
+    HttpInternalServerError,
+    HttpMethodNotAllowed,
+    HttpNotFound,
+    HttpNotImplemented,
+    HttpUnauthorized,
+    NoAuthentificationMethod,
 )
 
 CACHED_API_RESOURCE_LIST = ".api_stash"
 DEFAULT_CONTENT_TYPE = "application/json"
 
 
-def setattrs(obj, **kwargs):
+def setattrs(obj: Any, **kwargs: dict[str, Any]) -> None:
     """Set new attributes to obj inplace."""
 
     for k, v in kwargs.items():
@@ -49,7 +52,7 @@ class ApiResourceAccessor:
     /api/range/, /api/user/ ...
     """
 
-    def __init__(self, name, conf, api):
+    def __init__(self, name: str, conf: dict[str, Any], api: ApiHelper):
         self._name = name
         self._conf = conf
         self.api = api
@@ -465,6 +468,11 @@ class OAuth1Token:
         "oauth_token",
         "oauth_token_secret",
         "oauth_verifier",
+        # for __call__ method
+        "oauth_consumer_key",
+        "oauth_signature_method",
+        "oauth_nonce",
+        "oauth_timestamp",
     )
 
     def __init__(self, oauth_consumer_key, oauth_consumer_secret, **kwargs):
@@ -686,7 +694,7 @@ class ApiHelper:
             if n in (
                 "import",
                 "studymember",
-                "studymember/(?P<user_id>\d+)/study/(?P<study_id>\d+)",
+                r"studymember/(?P<user_id>\d+)/study/(?P<study_id>\d+)",
             ):
                 continue
             try:
@@ -801,7 +809,7 @@ class ApiHelper:
         return None
 
     def resource_and_id_from_uri(self, path):
-        base_uri, id = re.match("^(.+?)(\d+)/$", path).groups()
+        base_uri, id = re.match(r"^(.+?)(\d+)/$", path).groups()
         for k, r in self.resource_conf.items():
             if r["list_endpoint"] == base_uri:
                 return getattr(self, k), id
