@@ -1,3 +1,4 @@
+Fork and QoL modifications of the original [Hexoskin Python API Client](https://bitbucket.org/carre/hexoskin-api-python-client/src/master/).
 
 # Hexoskin Python API Client
 
