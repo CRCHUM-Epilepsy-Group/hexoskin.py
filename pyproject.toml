@@ -1,0 +1,17 @@
+[build-system]
+    build-backend = "setuptools.build_meta"
+    requires      = [ "setuptools", "setuptools-scm" ]
+
+[project]
+    classifiers = [
+        "Programming Language :: Python :: 3",
+    ]
+    dependencies = [
+        "requests",
+    ]
+    description = "Hexoskin API Python Wrapper"
+    dynamic = [ "version" ]
+    license = { text = "BSD-3-Clause" }
+    name = "hexoskin"
+    readme = "README.md"
+    requires-python = ">=3.11"
