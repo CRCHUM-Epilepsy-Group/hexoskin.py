@@ -778,7 +778,7 @@ class ApiHelper:
             **kwargs,
         )
         if response.status_code >= 400:
-            print(response.json())
+            # print(response.json())
             self._raise_http_exception(response)
         return response
 
