@@ -62,12 +62,12 @@ Most commonly, you will query the API using the list() or get() methods of a Api
 Get the current user's info
 
     user = api.account.list()[0]
-    print user
+    print(user)
 
 All the users you can see:
 
     users = api.user.list()
-    print users
+    print(users)
 
 Passing either keyword arguments or a dictionary to list() sets the GET args of the request.  So any filtering you'd like to apply (that's supported by the API too, of course) can be managed that way.  For instance, of records before a given startTimestamp.
 
@@ -79,11 +79,11 @@ Or:
 
 `records` is a ApiResourceList of record ApiResourceInstances.  You can access it like a list:
 
-    print record[0]
+    print(record[0])
 
 Note that the API resources contained in the record, such as record.user, have also been converted to ApiResourceInstances.
 
-    print record[0].user
+    print(record[0].user)
 
 You can get the next page by calling load_next() on the list.
 
@@ -109,13 +109,13 @@ But often the library will handle loading objects for you as described in the ne
 Often child resources are specified by their URI.  For example, a Range has a User, but when you load a Range, just the URI is returned for the user.  If you wish to know more about the user, say his first_name for example, you would have to load the user with a separate call.  Because this is such a common operation, the library will take care of this for you.
 
     rng = api.range.list()[0] # rng.user is just a URI right now.
-    print rng.user.first_name # the user object is automatically fetched.
+    print(rng.user.first_name) # the user object is automatically fetched.
 
 Say you have a list of Ranges all from the same user and lazy load an attribute in a loop:
 
     rngs = api.range.list(user=123) # 20 ranges belonging to user 123
     for r in rngs:
-        print r.user.first_name
+        print(r.user.first_name)
 
 Clearly it shouldn't be necessary to fetch the user 20 times and happily the library is clever enough to avoid that.  Once the user is loaded once, it's added to an object cache and won't be loaded again until the cache expires (1 hour right now).  If you want to force the library to skip the object cache, pass `force_refresh=True` in your call:
 
@@ -133,7 +133,7 @@ The object cache has another benefit, it stores every unique API object only onc
 
 Every instance of that user is updated, eg. each user object on list of Ranges:
 
-    print rngs[0].user.first_name # prints "Billy Bob"
+    print(rngs[0].user.first_name # prints "Billy Bob")
 
 But you still have to call update to send that change to the server or it will be overwritten the next time you receive that user object from the server:
 
@@ -186,12 +186,12 @@ You can modify ApiResourceInstances in place and then call update():
 
     new_range.name = 'newtestyrangey'
     new_range.update()
-    print new_range
+    print(new_range)
 
 Or by passing a dictionary to update().  Note that we're using ApiResourceInstances as a values here, regular values work too of course, using an ApiResourceInstance is just a convenience.
 
     new_range.update({'user': users[0]})
-    print new_range
+    print(new_range)
 
 
 ## Deleting Resources
@@ -231,7 +231,7 @@ All HTTP errors inherit from this class so you may use this to catch **all** (ev
         r = api.annotation.list({'user':5437})[0]
         r.update({'annotation':'I wuz here'})
     catch HttpError, e:
-        print e.response
+        print(e.response)
 
 
 ### HttpClientError 4xx
@@ -268,17 +268,17 @@ Setting it to None will disable the caching but that's not recommended, you'll i
 
 If you want to take a look at how the resource is defined (to find available filters for example), you can print it, it's just a normal dict:
 
-    print api.resource_conf
+    print(api.resource_conf)
 
 That will likely be a little too large to be useful though.  Each resource is stored separately and links to the configs are available from all the ApiResource[type] classes.
 
-    print api.resource_conf['range']
+    print(api.resource_conf['range'])
 
     # ApiResourceAccessors store a link to the config
-    print api.range._conf
+    print(api.range._conf)
 
     # ApiResourceInstances and ApiResourceLists have a _parent to their ApiResourceAccessor
-    print new_range._parent._conf
-    print records._conf
+    print(new_range._parent._conf)
+    print(records._conf)
 
 You likely won't need that... but it's there!
